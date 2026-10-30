@@ -14,27 +14,16 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
 sys.path.insert(0, GRACEFM)
+sys.path.insert(0, os.path.join(HERE, ".."))
 
 from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm.txrx import Transmitter, receive  # noqa: E402
 from tools.common import metrics, wavio  # noqa: E402
+from gracefm_ultra.channels import loss_mask  # noqa: E402
 
 AUDIO = ["lossless/Emotional_piano.wav", "lossless/Ceramic_Djembe.wav",
          "lossless/344211_giomilko_c-major-9-bossa-nova-guitar.wav"]
-
-
-def loss_mask(nfr, rate, burst, rng):
-    """rate: 欠落率。burst: 平均バースト長 [フレーム] (1ならランダム)。Gilbert-Elliott 型"""
-    if rate <= 0:
-        return np.zeros(nfr, bool)
-    p_bg = 1.0 / burst
-    p_gb = rate * p_bg / (1 - rate)
-    bad, out = False, np.empty(nfr, bool)
-    for i in range(nfr):
-        out[i] = bad
-        bad = (rng.random() >= p_bg) if bad else (rng.random() < p_gb)
-    return out
 
 
 def run(x, p, esn0, rate, burst, seed):
