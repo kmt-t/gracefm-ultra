@@ -40,7 +40,7 @@ def lpc_predict(hist, order, ridge=1e-9):
     return pred, var
 
 
-def posterior_mean(p1_bits, pos, offset, step, pred, var, qmin, qmax):
+def posterior_mean(p1_bits, pos, offset, step, pred, var, qmin, qmax, nu=None):
     """p1_bits: 仮数bitのp1 (pos の並び)。候補 u の事後平均 (係数の単位) と事後分散を返す"""
     nb = int(pos.max()) + 1
     u = np.arange(1 << nb)
@@ -51,7 +51,10 @@ def posterior_mean(p1_bits, pos, offset, step, pred, var, qmin, qmax):
         ll += np.where(bit == 1, np.log(pb), np.log(1 - pb))
     m = u - offset
     x = m * step
-    ll += -0.5 * (x - pred) ** 2 / var
+    if nu is None:
+        ll += -0.5 * (x - pred) ** 2 / var
+    else:                                    # 裾の重い事前 (Student-t、自由度 nu)
+        ll += -0.5 * (nu + 1) * np.log1p((x - pred) ** 2 / (nu * var))
     ll[(m < qmin) | (m > qmax)] = -np.inf
     w = np.exp(ll - ll.max())
     w /= w.sum()

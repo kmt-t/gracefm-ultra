@@ -30,6 +30,33 @@ class FloatRx:
         self.lay = Layout(self.p)
         self.block = self.p.block
 
+    def bit_meta(self):
+        """
+        仮数bit (coef_items の並び) の位置属性。BitNet などの入力に使う。
+          strong  強い位置 (位相部: 階層16QAMの符号bit) か。弱い位置 (振幅部) は False
+          protected  パリティで守られる上位K bit か
+          pos     bit の重み 2^pos の pos (大きいほど上位)
+          band    帯域番号 k
+          ch      成分 (0: M, 1: S)
+          coef    係数の通し番号 (coef_offset 基準)
+          sym     bit が載るシンボルの番号 (同じシンボルの強弱bitは同じ雑音を受ける)
+        """
+        lay = self.lay
+        idx = lay.coef_stream_idx
+        strong = idx < lay.n_strong if self.p.layered else np.ones(len(idx), bool)
+        prot = np.zeros(len(idx), bool)
+        prot[lay.top_coef_idx] = True
+        n_slot = lay.n_strong if self.p.layered else len(idx)
+        return {
+            "strong": strong,
+            "protected": prot,
+            "pos": lay.coef_pos.copy(),
+            "band": np.array([t[1] for t in lay.coef_items]),
+            "ch": lay.coef_ch.copy(),
+            "coef": lay.coef_flat.copy(),
+            "sym": (idx % max(n_slot, 1)) // 2 if self.p.layered else idx // 2,
+        }
+
     def _segsum(self, v):
         lay = self.lay
         out = np.zeros(lay.n_coef)
