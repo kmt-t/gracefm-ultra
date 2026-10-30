@@ -23,6 +23,7 @@ from tools.common import wavio  # noqa: E402
 
 CPUS = {0, 1, 5, 6, 7, 11}
 GAPS = [1, 2, 3, 5, 8, 12, 18, 25]
+GAP_P = np.array([0.25, 0.15, 0.15, 0.12, 0.12, 0.08, 0.07, 0.06])      # 短い欠落を多めに
 
 
 def load_train(src, seconds):
@@ -54,7 +55,7 @@ def make_batch(coefs, bs, rng):
             continue
         known = np.ones(WIN, bool)
         for _ in range(int(rng.integers(1, 4))):
-            g = int(rng.choice(GAPS))
+            g = int(rng.choice(GAPS, p=GAP_P))
             a = int(rng.integers(0, WIN - g + 1))
             known[a:a + g] = False
         if known.sum() < 10 or known.all():
@@ -86,6 +87,7 @@ def main():
     ap.add_argument("--bs", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seconds", type=float, default=150, help="音源ごとに使う長さ")
+    ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
     ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "plc.pt"))
     a = ap.parse_args()
     os.sched_setaffinity(0, CPUS)
@@ -96,6 +98,9 @@ def main():
     cfg = dict(ch=192, blocks=12)
     net = PlcNet(**cfg)
     print(f"パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
+    if a.resume:
+        net.load_state_dict(torch.load(a.resume, map_location="cpu")["model"])
+        print(f"{a.resume} から再開", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     t0, step, run = time.time(), 0, []
     total = a.minutes * 60
