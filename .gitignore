@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.wav
+# 学習データ・中間生成物・チェックポイント
+data/
+runs/
+*.pt
+*.npz
