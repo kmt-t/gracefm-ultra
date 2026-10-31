@@ -69,42 +69,54 @@ pub struct Unpacked {
     pub top_bits: Vec<u8>,
     /// ヘッダのフレーム番号（16 bit）
     pub counter: u64,
+    /// 採用したヘッダの候補の順位（0 = 最尤）。0 でないとき、最尤の候補は CRC が合わなかった
+    pub rank: usize,
+    /// 最尤の候補との対数尤度の差 [nat]（0 = 最尤）。大きいほど、採用の根拠が弱い（下流の信頼度に使える）
+    pub gap: f64,
 }
 
 fn val(bits: &[u8]) -> u64 {
     bits.iter().fold(0u64, |a, &b| (a << 1) | b as u64)
 }
 
-/// unpack に渡す事前の軟値（正 = 0 らしい）。ビタビ復号の情報ビット側に足す
-#[derive(Clone, Copy, Default)]
-pub struct UnpackPrior<'a> {
-    /// ヘッダの情報ビット（n_hdata 個）
-    pub header: Option<&'a [f64]>,
-    /// 保護された仮数の上位ビット（n_top 個、Layout の top_coef_idx の並び）
-    pub top: Option<&'a [f64]>,
+/// unpack の設定
+#[derive(Clone, Copy)]
+pub struct UnpackOptions<'a> {
+    /// ヘッダの情報ビット（n_hdata 個）の事前の軟値（正 = 0 らしい）。ビタビ復号の情報ビット側に足す
+    pub header_prior: Option<&'a [f64]>,
+    /// 保護された仮数の上位ビット（n_top 個、Layout の top_coef_idx の並び）の事前の軟値
+    pub top_prior: Option<&'a [f64]>,
+    /// ヘッダの候補の数（尤度の高い順。1 なら通常のビタビ復号と CRC 検査）。
+    /// CRC は 12 bit なので、候補が多いほど、誤ったヘッダが偶然 CRC を通る確率（1 候補あたり 2^-12）が増える。8 なら、測定した範囲（Rayleigh 4〜8 dB まで）で誤採用は 0.2% 以下
+    pub list: usize,
 }
 
-/// pack の逆。soft: 送信ビット列全体の軟値（自然対数の LLR、正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None。純粋な関数。
-/// prior: 事前の軟値。`UnpackPrior::default()` なら通信路の軟値だけ
-pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], prior: &UnpackPrior) -> Option<Unpacked> {
+impl Default for UnpackOptions<'_> {
+    fn default() -> Self {
+        UnpackOptions { header_prior: None, top_prior: None, list: 8 }
+    }
+}
+
+/// pack の逆。soft: 送信ビット列全体の軟値（自然対数の LLR、正 = 0 らしい）、bits: 硬判定。
+/// ヘッダを尤度の高い順の候補にして（リストビタビ）、基本 CRC が最初に合うものを採る。合う候補がなければ None。
+/// 純粋な関数。
+pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> Option<Unpacked> {
     use crate::codec::{offset_of, qmax_of, qmin_of};
     let p = &lay.p;
     let pick = |idx: &[usize]| -> Vec<f64> { idx.iter().map(|&i| soft[i]).collect() };
     let mut header_soft = pick(&lay.hdata_idx);
-    if let Some(pr) = prior.header {
+    if let Some(pr) = opt.header_prior {
         for (x, p) in header_soft.iter_mut().zip(pr) {
             *x += p;
         }
     }
-    let prot = fec::rsc_decode(&header_soft, &pick(&lay.hpar_idx), &pick(&lay.htail_idx));
-    let body = &prot[..lay.n_prot];
     let top: Vec<u8> = if lay.n_top > 0 {
         let t6 = fec::K - 1;
         let top_stream: Vec<usize> = lay.top_coef_idx.iter().map(|&i| lay.coef_stream_idx[i]).collect();
         let mut par = pick(&lay.parity_idx);
         par.extend(pick(&lay.tail_idx[..t6]));
         let mut top_soft = pick(&top_stream);
-        if let Some(pr) = prior.top {
+        if let Some(pr) = opt.top_prior {
             for (x, p) in top_soft.iter_mut().zip(pr) {
                 *x += p;
             }
@@ -113,19 +125,27 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], prior: &UnpackPrior) -> O
     } else {
         Vec::new()
     };
-    let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| body[i]).collect();
-    core.extend(lay.core_top.iter().map(|&i| top[i]));
-    let mut high: Vec<u8> = lay.high_prot.iter().map(|&i| body[i]).collect();
-    high.extend(lay.high_top.iter().map(|&i| top[i]));
+    let candidates = fec::rsc_decode_list(&header_soft, &pick(&lay.hpar_idx), &pick(&lay.htail_idx), opt.list.max(1));
+    let best = candidates.first()?.1;
     let n_core = fec::CRC_CORE.0;
-    if fec::crc_core(&core) != prot[lay.n_prot..lay.n_prot + n_core] {
-        return None;
-    }
-    let high_ok = !lay.has_high_crc || fec::crc_high(&high) == prot[lay.n_prot + n_core..];
+    let (rank, gap, prot, high_ok) = candidates.iter().enumerate().find_map(|(rank, (prot, metric))| {
+        let body = &prot[..lay.n_prot];
+        let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| body[i]).collect();
+        core.extend(lay.core_top.iter().map(|&i| top[i]));
+        if fec::crc_core(&core) != prot[lay.n_prot..lay.n_prot + n_core] {
+            return None;
+        }
+        let hdr = &body[..lay.header_bits];
+        if val(&hdr[0..4]) != p.pid as u64 || hdr[5] != 0 || val(&hdr[6..8]) != p.format_id as u64 {
+            return None;
+        }
+        let mut high: Vec<u8> = lay.high_prot.iter().map(|&i| body[i]).collect();
+        high.extend(lay.high_top.iter().map(|&i| top[i]));
+        let high_ok = !lay.has_high_crc || fec::crc_high(&high) == prot[lay.n_prot + n_core..];
+        Some((rank, (best - metric) / 2.0, prot.clone(), high_ok))
+    })?;
+    let body = &prot[..lay.n_prot];
     let hdr = &body[..lay.header_bits];
-    if val(&hdr[0..4]) != p.pid as u64 || hdr[5] != 0 || val(&hdr[6..8]) != p.format_id as u64 {
-        return None;
-    }
     let mut coef_bits: Vec<u8> = lay.coef_stream_idx.iter().map(|&i| bits[i]).collect();
     for (t, &ci) in lay.top_coef_idx.iter().enumerate() {
         coef_bits[ci] = top[t];
@@ -153,54 +173,5 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], prior: &UnpackPrior) -> O
         let b = p.bits(ch)[k];
         mant[ch][k] = Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b)).clamp(qmin_of(b), qmax_of(b))).collect());
     }
-    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, top_bits: top, counter: val(&hdr[8..lay.header_bits]) })
-}
-
-pub const RECOVER_CANDIDATES: usize = 7;
-pub const RECOVER_MAX_FLIPS: usize = 2;
-
-/// 基本 CRC が合わないとき、ヘッダの信頼度の低い bit を 1〜RECOVER_MAX_FLIPS 個反転して CRC が合う候補を探す（Chase 型）。
-/// 返り値の 2 つ目は反転した個数
-pub fn unpack_recovering(lay: &Layout, soft: &[f64], bits: &[u8], prior: &UnpackPrior) -> Option<(Unpacked, usize)> {
-    if let Some(r) = unpack(lay, soft, bits, prior) {
-        return Some((r, 0));
-    }
-    let mut hdr_idx: Vec<usize> = lay.hdata_idx.clone();
-    hdr_idx.extend(&lay.hpar_idx);
-    let mut order: Vec<usize> = (0..hdr_idx.len()).collect();
-    order.sort_by(|&a, &b| soft[hdr_idx[a]].abs().partial_cmp(&soft[hdr_idx[b]].abs()).unwrap()); // 安定ソート
-    let cand: Vec<usize> = order.iter().take(RECOVER_CANDIDATES).map(|&i| hdr_idx[i]).collect();
-    for t in 1..=RECOVER_MAX_FLIPS {
-        let mut comb: Vec<usize> = (0..t).collect();
-        loop {
-            let mut s2 = soft.to_vec();
-            let mut b2 = bits.to_vec();
-            for &c in &comb {
-                let idx = cand[c];
-                s2[idx] = -s2[idx];
-                b2[idx] ^= 1;
-            }
-            if let Some(r) = unpack(lay, &s2, &b2, prior) {
-                return Some((r, t));
-            }
-            // 次の組み合わせ（辞書順）
-            let mut i = t;
-            let mut done = true;
-            while i > 0 {
-                i -= 1;
-                if comb[i] != i + cand.len() - t {
-                    comb[i] += 1;
-                    for j in i + 1..t {
-                        comb[j] = comb[j - 1] + 1;
-                    }
-                    done = false;
-                    break;
-                }
-            }
-            if done {
-                break;
-            }
-        }
-    }
-    None
+    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, top_bits: top, counter: val(&hdr[8..lay.header_bits]), rank, gap })
 }

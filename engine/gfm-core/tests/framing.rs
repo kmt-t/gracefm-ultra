@@ -21,7 +21,7 @@ fn pack_unpack_round_trip() {
             let bd = encode_block(blk, &p, true);
             let stream = pack(&lay, &bd, 0, i as u64);
             assert_eq!(stream.len(), lay.n_tx);
-            let u = unpack(&lay, &soft_of(&stream, 20.0), &stream, &UnpackPrior::default())
+            let u = unpack(&lay, &soft_of(&stream, 20.0), &stream, &UnpackOptions::default())
                 .unwrap_or_else(|| panic!("{}: CRC が通らない", name));
             assert!(u.high_ok, "{}", name);
             assert_eq!(u.bd.mant, bd.mant, "{}: 仮数", name);
@@ -37,11 +37,11 @@ fn header_of_another_profile_is_rejected() {
     let (lay_a, lay_b) = (Layout::new(&a).unwrap(), Layout::new(&b).unwrap());
     let bd = encode_block(&stereo(64, 1), &a, true);
     let stream = pack(&lay_a, &bd, 0, 0);
-    assert!(unpack(&lay_a, &soft_of(&stream, 20.0), &stream, &UnpackPrior::default()).is_some());
+    assert!(unpack(&lay_a, &soft_of(&stream, 20.0), &stream, &UnpackOptions::default()).is_some());
     // 別のプロファイルの配置で読むと、プロファイル ID か CRC が合わない
     let mut s2 = stream.clone();
     s2.resize(lay_b.n_tx.max(stream.len()), 0);
-    assert!(unpack(&lay_b, &soft_of(&s2, 20.0)[..lay_b.n_tx], &s2[..lay_b.n_tx], &UnpackPrior::default()).is_none());
+    assert!(unpack(&lay_b, &soft_of(&s2, 20.0)[..lay_b.n_tx], &s2[..lay_b.n_tx], &UnpackOptions::default()).is_none());
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn heavy_corruption_fails_the_crc() {
         soft[i] = -soft[i];
     }
     let hard: Vec<u8> = soft.iter().map(|&s| (s < 0.0) as u8).collect();
-    assert!(unpack_recovering(&lay, &soft, &hard, &UnpackPrior::default()).is_none());
+    assert!(unpack(&lay, &soft, &hard, &UnpackOptions::default()).is_none());
 }
 
 #[test]
@@ -65,8 +65,8 @@ fn recovery_returns_the_plain_result_when_the_frame_is_fine() {
     let lay = Layout::new(&p).unwrap();
     let bd = encode_block(&stereo(64, 3), &p, true);
     let stream = pack(&lay, &bd, 1, 7);
-    let (u, flips) = unpack_recovering(&lay, &soft_of(&stream, 10.0), &stream, &UnpackPrior::default()).unwrap();
-    assert_eq!(flips, 0);
+    let u = unpack(&lay, &soft_of(&stream, 10.0), &stream, &UnpackOptions::default()).unwrap();
+    assert_eq!((u.rank, u.gap), (0, 0.0));
     assert_eq!(u.bd.mant, bd.mant);
 }
 

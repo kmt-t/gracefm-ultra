@@ -154,3 +154,77 @@ pub fn rsc_decode(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64]) -> Vec
     let c = conv_encode(&u);
     (0..n).map(|i| c[2 * i]).collect()
 }
+
+/// 並列リストビタビ。尤度の高い順に最大 list 個の復号ビット（nbits）と経路メトリックを返す。
+/// 経路メトリックは対数尤度の 2 倍（メトリックの差の 1/2 が、対数尤度の差 [nat]）。1 番目は `viterbi_decode` と同じ。
+pub fn viterbi_list(soft: &[f64], nbits: usize, list: usize) -> Vec<(Vec<u8>, f64)> {
+    #[derive(Clone, Copy)]
+    struct Entry {
+        metric: f64,
+        from_p1: bool,
+        prev_rank: u16,
+    }
+    let tr = trellis();
+    let l = nbits + K - 1;
+    let mut cur: Vec<Vec<f64>> = vec![Vec::new(); NSTATE];
+    cur[0].push(0.0);
+    let mut store: Vec<Vec<Vec<Entry>>> = Vec::with_capacity(l);
+    for t in 0..l {
+        let (r0, r1) = (soft[2 * t], soft[2 * t + 1]);
+        let bm = [r0 + r1, r0 - r1, -r0 + r1, -r0 - r1];
+        let mut layer: Vec<Vec<Entry>> = vec![Vec::new(); NSTATE];
+        for (ns, out) in layer.iter_mut().enumerate() {
+            if t >= nbits && tr.forced[ns] {
+                continue; // 終端区間は入力 0 のみ
+            }
+            let (a, b) = (&cur[tr.p0[ns]], &cur[tr.p1[ns]]);
+            let (ba, bb) = (bm[tr.b0[ns]], bm[tr.b1[ns]]);
+            let (mut i, mut j) = (0, 0);
+            while out.len() < list && (i < a.len() || j < b.len()) {
+                let take_a = j >= b.len() || (i < a.len() && a[i] + ba >= b[j] + bb);
+                if take_a {
+                    out.push(Entry { metric: a[i] + ba, from_p1: false, prev_rank: i as u16 });
+                    i += 1;
+                } else {
+                    out.push(Entry { metric: b[j] + bb, from_p1: true, prev_rank: j as u16 });
+                    j += 1;
+                }
+            }
+        }
+        cur = layer.iter().map(|v| v.iter().map(|e| e.metric).collect()).collect();
+        store.push(layer);
+    }
+    (0..store[l - 1][0].len())
+        .map(|rank| {
+            let (mut s, mut r) = (0usize, rank);
+            let mut bits = vec![0u8; l];
+            for t in (0..l).rev() {
+                let e = store[t][s][r];
+                bits[t] = (s >> (K - 2)) as u8;
+                s = if e.from_p1 { tr.p1[s] } else { tr.p0[s] };
+                r = e.prev_rank as usize;
+            }
+            bits.truncate(nbits);
+            (bits, store[l - 1][0][rank].metric)
+        })
+        .collect()
+}
+
+/// `rsc_decode` のリスト版。尤度の高い順に、訂正後の情報ビット（n）と経路メトリックを返す
+pub fn rsc_decode_list(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64], list: usize) -> Vec<(Vec<u8>, f64)> {
+    let n = x_soft.len();
+    let mut r = vec![0f64; 2 * (n + K - 1)];
+    for (i, &v) in x_soft.iter().chain(tail_soft).enumerate() {
+        r[2 * i] = v;
+    }
+    for (i, &v) in parity_soft.iter().enumerate() {
+        r[2 * i + 1] = v;
+    }
+    viterbi_list(&r, n, list)
+        .into_iter()
+        .map(|(u, m)| {
+            let c = conv_encode(&u);
+            ((0..n).map(|i| c[2 * i]).collect(), m)
+        })
+        .collect()
+}

@@ -5,7 +5,7 @@
 use crate::codec::quant::{exp_range, qmax_of, qmin_of};
 use crate::codec::synthesize;
 use crate::codec::BlockData;
-use crate::framing::{coefficient_bits, unpack_recovering, UnpackPrior};
+use crate::framing::{coefficient_bits, unpack, UnpackOptions};
 use crate::layout::Layout;
 use crate::modem::{Modem, N_PREAMBLE};
 use crate::prior::{PriorConfig, Tracker};
@@ -160,8 +160,8 @@ impl Decoder {
     }
 
     /// 1 フレームの受信シンボル（プリアンブル込み、±1 = 1.0。届かなければ None）→ 復号結果。返り値の 2 つ目は Chase 救済で反転した bit の数。
-    /// prior: 事前の軟値（ヘッダは `Tracker::header_prior`）。`UnpackPrior::default()` なら通信路の軟値だけ
-    pub fn decode_frame(&self, sym: Option<&[[f64; 2]]>, prior: &UnpackPrior) -> (DecodedFrame, usize) {
+    /// opt: ヘッダの事前の軟値（`Tracker::header_prior`）と、リスト復号の設定。返り値の 2 つ目は、採用したヘッダの候補の順位（最尤が CRC を通らなかったとき > 0）
+    pub fn decode_frame(&self, sym: Option<&[[f64; 2]]>, opt: &UnpackOptions) -> (DecodedFrame, usize) {
         let expected = N_PREAMBLE + self.digital_nsym;
         let sym = match sym {
             Some(s) if s.len() == expected => s,
@@ -170,7 +170,7 @@ impl Decoder {
         let (mut llr, mut hard, _var) = self.modem.demodulate(&sym[N_PREAMBLE..expected], self.lay.n_tx);
         self.scrambler.descramble(&mut llr, &mut hard);
         let lay = &self.lay;
-        let (u, recovered) = match unpack_recovering(lay, &llr, &hard, prior) {
+        let u = match unpack(lay, &llr, &hard, opt) {
             Some(r) => r,
             None => return (self.missing(Status::CrcFail), 0),
         };
@@ -186,7 +186,7 @@ impl Decoder {
         };
         let (coef, rb) = soft_coeffs(lay, &u.bd, &p1, u.high_ok);
         let frame = DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), header: Some((u.counter, u.bd)) };
-        (frame, recovered)
+        (frame, u.rank)
     }
 
     /// frames: フレームごとのシンボル（届かなければ None）。返り値は、offset サンプル目から n サンプル。
@@ -203,7 +203,8 @@ impl Decoder {
         let mut tracker = Tracker::new();
         for (i, f) in frames.iter().enumerate() {
             let prior = (cfg.counter || cfg.temporal).then(|| tracker.header_prior(&self.lay, i, cfg));
-            let (d, recovered) = self.decode_frame(f.as_deref(), &UnpackPrior { header: prior.as_deref(), top: None });
+            let (d, recovered) =
+                self.decode_frame(f.as_deref(), &UnpackOptions { header_prior: prior.as_deref(), ..UnpackOptions::default() });
             if let Some((counter, bd)) = &d.header {
                 tracker.observe(i, *counter, bd);
             }

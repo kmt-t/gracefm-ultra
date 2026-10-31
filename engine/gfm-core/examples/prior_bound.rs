@@ -7,7 +7,7 @@
 use gfm_core::channel::{awgn_adc, Link, Scen};
 use gfm_core::codec::BlockData;
 use gfm_core::encoder::Encoder;
-use gfm_core::framing::{coefficient_bits, unpack_recovering, UnpackPrior};
+use gfm_core::framing::{coefficient_bits, unpack, UnpackOptions};
 use gfm_core::modem::{Modem, N_PREAMBLE};
 use gfm_core::pcm::read_pcm24_le;
 use gfm_core::profiles::profile_by_name;
@@ -60,15 +60,15 @@ fn main() {
                 scr.descramble(&mut llr, &mut hard);
                 let (pr, hd, tp) = (&truth[i].0, &truth[i].1, &truth[i].2);
                 let configs = [
-                    UnpackPrior::default(),
-                    UnpackPrior { header: Some(pr), top: None },
-                    UnpackPrior { header: Some(hd), top: None },
-                    UnpackPrior { header: None, top: Some(tp) },
-                    UnpackPrior { header: Some(pr), top: Some(tp) },
-                    UnpackPrior { header: Some(hd), top: Some(tp) },
+                    UnpackOptions::default(),
+                    UnpackOptions { header_prior: Some(pr), top_prior: None, ..UnpackOptions::default() },
+                    UnpackOptions { header_prior: Some(hd), top_prior: None, ..UnpackOptions::default() },
+                    UnpackOptions { header_prior: None, top_prior: Some(tp), ..UnpackOptions::default() },
+                    UnpackOptions { header_prior: Some(pr), top_prior: Some(tp), ..UnpackOptions::default() },
+                    UnpackOptions { header_prior: Some(hd), top_prior: Some(tp), ..UnpackOptions::default() },
                 ];
                 for (k, c) in configs.iter().enumerate() {
-                    fails[k] += unpack_recovering(&lay, &llr, &hard, c).is_none() as usize;
+                    fails[k] += unpack(&lay, &llr, &hard, c).is_none() as usize;
                 }
                 total += 1;
             }
