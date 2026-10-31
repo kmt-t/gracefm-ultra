@@ -76,10 +76,11 @@ class FloatRx:
         lay, p = self.lay, self.p
         llr = np.asarray(llr, np.int64)
         hard = (llr < 0).astype(np.int64)
-        u = decoder.unpack_recovering(lay, llr, hard, None)
-        if u is None:
+        r = decoder.unpack_recovering(lay, llr, hard, None)           # (Unpacked, 救済で反転した bit 数) か None
+        if r is None:
             return {"ok": False, "high_ok": False, "mean": None, "var": None}
         p1 = 1.0 / (1.0 + np.exp(np.clip(llr[lay.coef_stream_idx] / float(1 << LLR_FRAC), -30, 30)))
+        u = r[0]
         bd = u.bd
         if lay.n_top:
             p1[lay.top_coef_idx] = u.top_bits           # パリティで訂正した上位K bit は確定値

@@ -1,17 +1,18 @@
 //! 出力段の切り替え先の因果 IIR（Butterworth 4 次 4 kHz）と、品質コードによる切り替え。GraceFM `gracefm/iir.py`、`postfilter.select_by_quality` の移植。
 
-use crate::tables::{ALT_IIR_32K_Q28, ALT_IIR_48K_Q28};
+use crate::dsp::saturate_bits;
+use crate::tables::{ALT_IIR_32K_Q16, ALT_IIR_48K_Q16};
 
-const Q: u32 = 28;
-const HALF: i64 = 1 << (Q - 1);
-const PCM_MAX: i64 = (1 << 23) - 1;
-const PCM_MIN: i64 = -(1 << 23);
+const Q: i64 = 16;
+const PCM_BITS: u32 = 24;
 
-pub fn alt_sections(fs: usize) -> &'static [[i64; 5]; 2] {
-    if fs == 32000 { &ALT_IIR_32K_Q28 } else { &ALT_IIR_48K_Q28 }
+/// 区間ごとの (b0_q, s, a1_q, a2_q)。b0 = b0_q / 2^(16+s)、a1 と a2 は Q16、a0 = 1、b1 = 2·b0、b2 = b0（係数はすべて 18 bit 符号つき）
+pub fn alt_sections(fs: usize) -> &'static [[i64; 4]; 2] {
+    if fs == 32000 { &ALT_IIR_32K_Q16 } else { &ALT_IIR_48K_Q16 }
 }
 
-pub fn iir_filter(x: &[[i64; 2]], sections: &[[i64; 5]]) -> Vec<[i64; 2]> {
+/// 直接形 II の転置で区間を直列に通す（因果）。状態と出力は b0 の尺度（Q16+s）で持つ
+pub fn iir_filter(x: &[[i64; 2]], sections: &[[i64; 4]]) -> Vec<[i64; 2]> {
     let mut st = vec![[[0i64; 2]; 2]; sections.len()]; // [区間][ch][s1, s2]
     let mut out = Vec::with_capacity(x.len());
     for xs in x {
@@ -19,12 +20,13 @@ pub fn iir_filter(x: &[[i64; 2]], sections: &[[i64; 5]]) -> Vec<[i64; 2]> {
         for c in 0..2 {
             let mut v = xs[c];
             for (j, sec) in sections.iter().enumerate() {
-                let (b0, b1, b2, a1, a2) = (sec[0], sec[1], sec[2], sec[3], sec[4]);
+                let (b0, sc, a1, a2) = (sec[0], sec[1], sec[2], sec[3]);
+                let qs = Q + sc;
                 let s = &mut st[j][c];
                 let acc = b0 * v + s[0];
-                let y = ((acc + HALF) >> Q).clamp(PCM_MIN, PCM_MAX);
-                s[0] = b1 * v - a1 * y + s[1];
-                s[1] = b2 * v - a2 * y;
+                let y = saturate_bits((acc + (1 << (qs - 1))) >> qs, PCM_BITS);
+                s[0] = 2 * b0 * v - ((a1 * y) << sc) + s[1];
+                s[1] = b0 * v - ((a2 * y) << sc);
                 v = y;
             }
             o[c] = v;

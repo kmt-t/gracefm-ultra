@@ -14,8 +14,8 @@ def arr(name, vals, ty="i64"):
 
 out = "// tools/gen_rs_tables.py が ../gracefm/gracefm/tables.py から作る (手で書き換えない)。\n"
 out += arr("HANN128_Q15", T.HANN128_Q15)
-for name in ("ALT_IIR_32K_Q28", "ALT_IIR_48K_Q28"):
+for name in ("ALT_IIR_32K_Q16", "ALT_IIR_48K_Q16"):
     secs = getattr(T, name)
-    out += f"pub const {name}: [[i64; 5]; {len(secs)}] = [{', '.join('[' + ', '.join(str(int(v)) for v in s) + ']' for s in secs)}];\n"
+    out += f"pub const {name}: [[i64; 4]; {len(secs)}] = [{', '.join('[' + ', '.join(str(int(v)) for v in s) + ']' for s in secs)}];\n"
 open(os.path.join(HERE, "..", "engine", "gfm-core", "src", "tables.rs"), "w").write(out)
 print("wrote tables.rs")

@@ -3,7 +3,7 @@
 GraceFM のビット列・フレーム形式は変えない。Rust の実装（`engine/gfm-core`）は、送信と受信が鏡になる構成にする。
 Python 版（`../gracefm`）へのバックポート用に、対応づけと、現状の非対称をまとめる。
 
-**状況（2026-11-01）**: 本家の user が、Python 版のリファクタを差し戻した。Python 版は従来の構成（`txrx.py` など）のままで、Rust の構成は「Python に先行する案」として残す。Ultra の Python ツールは従来の名前に依存する。
+**状況（2026-11-01）**: 本家の Python 版は、この構成に沿ってリファクタされた（本家のコミット 60602fd。`encoder.py` / `decoder.py` / `receiver.py` / `scrambler.py`、旧名の別名なし）。Rust 版は Python 版に追従し、2 つの一致テスト（`tools/test_rs_parity.py`、`tools/test_rs_rx_parity.py`）で完全一致を確認している。本家は続けて出力 IIR の係数を 18 bit（Q16）にした（作業ツリーの変更）。Rust の `iir.rs` と定数表（`tools/gen_rs_tables.py` が `tables.py` から作る）は、その版に合わせてある。
 
 ## 処理の対
 
