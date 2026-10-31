@@ -16,7 +16,7 @@
 ## ディレクトリ
 
 - `gracefm_ultra/`: 受信（`rx.py`）、HaarNet（`haarnet.py`）、PlcNet（`plcnet.py`）、IIR切替（`iir_switch.py`）
-- `tools/`: データ生成（`gen_dataset.py`、`prep_haarnet.py`）、学習（`train_haarnet.py`、`train_plc.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
+- `tools/`: データ生成（`gen_hn.py`、Rust の `engine/gfm-gen`）、学習（`train_haarnet.py`、`train_plc.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
 - `runs/`: 学習・評価のスクリプトとログ（モデルと一部ログは git 管理外）
 
 ## ライセンス

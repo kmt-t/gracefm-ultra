@@ -22,7 +22,7 @@ from gracefm.encoder import Encoder  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm.receiver import receive  # noqa: E402
 from gracefm_ultra.channels import loss_mask  # noqa: E402
-from prep_haarnet import clip_pcm  # noqa: E402
+from ref import clip_pcm  # noqa: E402
 
 BIN = os.path.join(HERE, "..", "engine", "target", "release", "gfm-rx")
 SRC = os.path.join(GRACEFM, "eval_audio", "train_lossless")

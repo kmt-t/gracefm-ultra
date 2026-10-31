@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from prep_haarnet import dataset_index  # noqa: E402
+from hn_index import dataset_index  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
 HM = torch.from_numpy(haar_matrix()).float()

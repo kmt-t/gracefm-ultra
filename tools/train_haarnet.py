@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HaarNet-lite の学習。prep_haarnet.py のデータから、64 フレームの窓をランダムに切って、
+HaarNet-lite の学習。gfm-gen（tools/gen_hn.py）が作るデータから、64 フレームの窓をランダムに切って、
 損失 = (窓内の既知フレームの誤差エネルギー) ÷ (正解係数のエネルギー + 下限)。欠落フレームは入力を 0 にして損失から除く。
 
   .venv/bin/python tools/train_haarnet.py --profile B200 --minutes 20 --out runs/hn_b200.pt
@@ -148,7 +148,7 @@ def main():
     rng = np.random.default_rng(0)
     data = load("train", a.profile, a.train_sub)
     meta = make_meta(data[0], PROFILES[a.profile])
-    from prep_haarnet import dataset_index
+    from hn_index import dataset_index
     from gracefm.layout import Layout
     _cidx, _ = dataset_index(PROFILES[a.profile], Layout(PROFILES[a.profile]))
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")

@@ -12,7 +12,7 @@ WIN = 64
 
 
 class Meta:
-    """bit 属性 (prep_haarnet.py が保存) から、LLR → 係数の事後平均・分散への写像を作る"""
+    """bit 属性 (gfm-gen が保存) から、LLR → 係数の事後平均・分散への写像を作る"""
 
     def __init__(self, pos, coef_of_bit, group, offsets, qmin, qmax):
         self.nbit = len(pos)
@@ -93,7 +93,7 @@ class HaarNetLite(nn.Module):
 
 
 def make_meta(npz, profile):
-    """prep_haarnet.py の出力 (npz) とプロファイルから Meta を作る"""
+    """gfm-gen の出力 (npz) とプロファイルから Meta を作る"""
     from gracefm.codec import offset_of, qmax_of, qmin_of
     from gracefm.layout import Layout
     lay = Layout(profile)

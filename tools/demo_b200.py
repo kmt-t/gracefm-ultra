@@ -29,7 +29,7 @@ from gracefm.encoder import Encoder  # noqa: E402
 from gracefm.receiver import receive  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta, soft_e0  # noqa: E402
 from gracefm_ultra.plcnet import haar_inv  # noqa: E402
-from prep_haarnet import steps_of  # noqa: E402
+from ref import steps_of  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 
@@ -93,8 +93,8 @@ def main():
     nfr = n // 64
     step = steps_of(p, lay, xi[:n], nfr)
     npz_like = {"pos": lay.coef_pos, "coef_of_bit": lay.coef_flat, "group": None}
-    # group (成分, 帯域) の番号 (prep_haarnet.dataset_index と同じ並び)
-    from prep_haarnet import dataset_index
+    # group (成分, 帯域) の番号 (hn_index.dataset_index と同じ並び)
+    from hn_index import dataset_index
     _, group = dataset_index(p, lay)
     npz_like["group"] = group
     meta = make_meta(npz_like, p)

@@ -2,7 +2,7 @@
 """
 Rust の生成器 (engine/gfm-gen) が、Python の GraceFM (符号化・フレーム化・変調・復調) と一致することを確かめる。
 通信路の雑音は両方で Es/N0 = 300 dB (雑音なし) にして、決定的な部分を完全一致で比べる:
-  送信ビット (全位置)、刻み、量子化前後の係数、受信 LLR (全位置)、雑音分散。
+  送信ビット (全位置)、刻み、量子化前後の係数、受信 LLR (全位置)。雑音分散は浮動小数点なので、本家の整数と 40% 以内。
 乱数を使う部分 (雑音、フェージング、欠落) は一致しないので、別に統計で確かめる (--stats)。
 
   .venv/bin/python tools/test_rs_parity.py [--profiles B200,SUB100] [--seconds 1.5]
@@ -24,7 +24,8 @@ from gracefm.codec import encode_block, haar_forward  # noqa: E402
 from gracefm.decoder import reconstruct_coeffs  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from prep_haarnet import clip_pcm, dataset_index, steps_of  # noqa: E402
+from hn_index import dataset_index
+from ref import clip_pcm, steps_of  # noqa: E402
 
 BIN = os.path.join(HERE, "..", "engine", "target", "release", "gfm-gen")
 SRC = os.path.join(GRACEFM if isinstance(GRACEFM, str) else "../gracefm", "eval_audio", "train_lossless")
@@ -95,7 +96,10 @@ def main():
             for k, v in ref.items():
                 got = d_["llr_full"][0] if k == "llr_full" else d_["llr"][0] if k == "llr" else d_["var"][0] if k == "var" else d_[k]
                 got = np.asarray(got).reshape(np.shape(v))
-                n = int(np.sum(got.astype(np.float64) != np.asarray(v, np.float64)))
+                if k == "var":      # 雑音分散は浮動小数点で求めるので、本家の整数（距離を右シフトして二乗）とは丸めの分だけ違う
+                    n = int(np.sum(np.abs(got / np.maximum(np.asarray(v, np.float64), 1) - 1) > 0.4))
+                else:
+                    n = int(np.sum(got.astype(np.float64) != np.asarray(v, np.float64)))
                 res.append((k, n))
             fails = [(k, n) for k, n in res if n]
             print(f"{name:12} {nfr} frames, n_tx {ref['bits_full'].shape[1]}: " + ("全て一致" if not fails else "不一致 " + ", ".join(f"{k}:{n}" for k, n in fails)))

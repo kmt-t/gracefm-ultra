@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-HaarNet 用の学習データを直接作る (Rust の engine/gfm-gen を使う)。tools/gen_dataset.py + tools/prep_haarnet.py の置き換え。
+HaarNet 用の学習データを作る (Rust の engine/gfm-gen を使う)。
 音源 1 本から複数の区間 (seconds + 2 秒の枠ごとに 1 区間) を取り、符号化 → 通信路シナリオ → 受信 LLR を data/<profile>/<sub>/<split>/ に書く。
-train / val は音源の番号で分ける (7 本に 1 本が val)。出力の形式は prep_haarnet.py の出力 (data/<profile>/hn/<split>/*.npz) と同じ。
+train / val は音源の番号で分ける (7 本に 1 本が val)。出力は data/<profile>/<sub>/<split>/*.npz (受信 LLR、送信ビット、刻み、量子化前後の係数、シナリオ)。
 
   .venv/bin/python tools/gen_hn.py --profile B200 --split train --segments 4 --workers 2 --sub hn_big
 """
@@ -21,12 +21,24 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
-from gen_dataset import scenarios  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 BIN = os.path.join(HERE, "..", "engine", "target", "release", "gfm-gen")
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
+
+
+
+def scenarios(rng, n):
+    """多様な通信路のリスト [(基準Es/N0, フェージング, 欠落率, 平均バースト長)]"""
+    out = []
+    for i in range(n):
+        esn0 = float(rng.uniform(0, 16)) if rng.random() < 0.5 else float(rng.uniform(16, 40))      # 高 C/N (同軸直結など) も厚く
+        fade = int(rng.random() < 0.5)
+        rate = 0.0 if rng.random() < 0.5 else float(rng.choice([0.02, 0.05, 0.1, 0.2, 0.3]))
+        burst = float(rng.choice([1, 3, 8, 25]))
+        out.append((esn0, fade, rate, burst))
+    return out
 
 
 def read_segment(path, start_s, dur_s):
