@@ -16,7 +16,7 @@ import sys
 from multiprocessing import Pool
 
 import numpy as np
-from scipy.signal import firwin, lfilter
+from scipy.signal import butter, firwin, lfilter, sosfilt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
@@ -69,7 +69,7 @@ def load(name, seconds):
 
 
 def job(args):
-    name, esn0, seed, seconds, wiener = args
+    name, esn0, seed, seconds, wiener, iirs = args
     os.sched_setaffinity(0, CPUS)
     from visqol import VisqolApi
     api = VisqolApi()
@@ -105,6 +105,12 @@ def job(args):
         h = firwin(NTAPS, fc / (FS / 2), window=("kaiser", 8))
         z = lfilter(h, 1.0, np.concatenate([y0 / sc, np.zeros(NTAPS)]))
         outs[f"fir{fc // 1000}k"] = z[(NTAPS - 1) // 2:(NTAPS - 1) // 2 + len(y0)]        # 遅延を補償
+    for spec in iirs:                                                              # 因果の IIR (縦続 biquad)。実機と同じ因果の動作
+        order, fc = (int(v) for v in spec.split(":"))
+        z = sosfilt(butter(order, fc / (FS / 2), output="sos"), y0 / sc)
+        lags = range(-2, 10)                                                       # 群遅延ぶんの整数遅れを、相互相関で補償 (SNR 用。ViSQOL は影響が小さい)
+        best = max(lags, key=lambda L: float(np.dot(np.roll(z, -L)[2000:-2000], (y0 / sc)[2000:-2000])))
+        outs[f"iir{order}_{fc // 1000}k"] = np.roll(z, -best)
     for spec in wiener:
         al, fl = (float(v) for v in spec.split(":"))
         outs["wiener" if spec == "1:0.03" else f"w{al:g}/{fl:g}"] = wiener_postfilter(y0, var, floor=fl, alpha=al)[0] / sc
@@ -135,6 +141,7 @@ def main():
     ap.add_argument("--seeds", type=int, default=2)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--wiener", default="1:0.03", help="alpha:floor をカンマ区切りで (掃引用)")
+    ap.add_argument("--iir", default="", help="order:fc をカンマ区切りで (例 2:6000,4:6000)")
     ap.add_argument("--materials", default=",".join(FOUR), help="カンマ区切り")
     ap.add_argument("--merge", default="", help="カンマ区切りの JSON を結合して表だけ出す (実験は走らせない)")
     ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "exp_wiener_post.json"))
@@ -144,7 +151,7 @@ def main():
         rows = [r for f in a.merge.split(",") for r in json.load(open(f))]
     else:
         mats = a.materials.split(",")
-        jobs = [(m, float(e), s_, a.seconds, a.wiener.split(",")) for e in a.esn0.split(",") for m in mats for s_ in range(a.seeds)]
+        jobs = [(m, float(e), s_, a.seconds, a.wiener.split(","), [v for v in a.iir.split(",") if v]) for e in a.esn0.split(",") for m in mats for s_ in range(a.seeds)]
         with Pool(a.workers) as pool:
             rows = []
             for r in pool.imap_unordered(job, jobs):
