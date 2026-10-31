@@ -7,7 +7,15 @@ use gfm_core::plc::*;
 
 fn stream(pcm: Vec<[f64; 2]>, valid: bool, var: f64) -> StreamResult {
     let n = pcm.len();
-    StreamResult { pcm, valid: vec![valid; n], quality: vec![0; n / 64], rb: vec![[[var; 5]; 2]; n], stats: Default::default() }
+    StreamResult {
+        pcm,
+        valid: vec![valid; n],
+        quality: vec![0; n / 64],
+        status: Vec::new(),
+        gap: Vec::new(),
+        rb: vec![[[var; 5]; 2]; n],
+        stats: Default::default(),
+    }
 }
 
 #[test]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HaarNet 用の学習データを作る (Rust の engine/gfm-gen を使う)。
+HaarNet 用 (--mend なら MendNet 用) の学習データを作る (Rust の engine/gfm-gen を使う)。
 音源 1 本から複数の区間 (seconds + 2 秒の枠ごとに 1 区間) を取り、符号化 → 通信路シナリオ → 受信 LLR を data/<profile>/<sub>/<split>/ に書く。
 train / val は音源の番号で分ける (7 本に 1 本が val)。出力は data/<profile>/<sub>/<split>/*.npz (受信 LLR、送信ビット、刻み、量子化前後の係数、シナリオ)。
 
@@ -55,7 +55,7 @@ def read_segment(path, start_s, dur_s):
 
 
 def job(args):
-    path, slot, profile, seconds, nscen, seed, outdir = args
+    path, slot, profile, seconds, nscen, seed, outdir, mend = args
     os.sched_setaffinity(0, CPUS)
     p = PROFILES[profile]
     name = os.path.splitext(os.path.basename(path))[0][:50]
@@ -76,6 +76,8 @@ def job(args):
         raw = os.path.join(d, "x.raw")
         pcm.astype("<i4").tofile(raw)
         cmd = [BIN, "--profile", profile, "--pcm", raw, "--seed", str(seed), "--out", out + ".tmp", "--threads", "1", "--start", str(int(slot * span * 1000))]
+        if mend:
+            cmd.append("--mend")
         for e0, fade, rate, burst in scen:
             cmd += ["--scen", f"{e0},{fade},{rate},{burst}"]
         r = subprocess.run(cmd, capture_output=True, text=True)
@@ -96,6 +98,7 @@ def main():
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--sub", default="hn_big", help="出力先 data/<profile>/<sub>/<split>")
+    ap.add_argument("--mend", action="store_true", help="MendNet 用 (復号した係数・状態・分散) を書く")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     a = ap.parse_args()
     os.sched_setaffinity(0, CPUS)
@@ -112,7 +115,7 @@ def main():
         nslots = max(int(dur // (a.seconds + 2)), 1)
         rng = np.random.default_rng(a.seed * 1000 + i)
         for slot in rng.permutation(nslots)[:a.segments]:
-            jobs.append((path, int(slot), a.profile, a.seconds, a.scenarios, a.seed * 100000 + i * 100 + int(slot), outdir))
+            jobs.append((path, int(slot), a.profile, a.seconds, a.scenarios, a.seed * 100000 + i * 100 + int(slot), outdir, a.mend))
     print(f"{a.profile} {a.split}: {len(jobs)} 区間 → {outdir}", flush=True)
     t0 = time.time()
     with Pool(min(a.workers, len(jobs), len(CPUS))) as pool:

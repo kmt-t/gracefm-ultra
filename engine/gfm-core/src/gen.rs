@@ -140,7 +140,7 @@ impl Receiver<'_> {
 }
 
 /// f(0), f(1), ..., f(n-1) を threads 本のスレッドで計算して、順に返す
-fn parallel_map<T: Send>(n: usize, threads: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
+pub(crate) fn parallel_map<T: Send>(n: usize, threads: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
     let threads = threads.clamp(1, n.max(1));
     let mut out: Vec<Option<T>> = (0..n).map(|_| None).collect();
     std::thread::scope(|scope| {

@@ -50,6 +50,8 @@ pub struct DecodedFrame {
     pub rb: Option<[Rb; 2]>,
     /// ヘッダのフレーム番号と、BlockData（基本 CRC が通ったとき）。次のフレームのヘッダの予測に使う
     pub header: Option<(u64, BlockData)>,
+    /// 採用したヘッダの、最尤との対数尤度の差 [nat]（`Unpacked::gap`）。届かない・CRC 不一致は 0
+    pub gap: f64,
 }
 
 impl DecodedFrame {
@@ -67,6 +69,9 @@ pub struct StreamResult {
     pub valid: Vec<bool>,
     /// フレームごとの品質コード（時刻合わせ前）
     pub quality: Vec<i64>,
+    /// フレームごとの状態と、ヘッダの採用の最尤との差 [nat]（時刻合わせ前）
+    pub status: Vec<Status>,
+    pub gap: Vec<f64>,
     /// 時刻合わせ済みの、サンプルごとの誤差分散 [成分][帯域]
     pub rb: Vec<Rb>,
     pub stats: Stats,
@@ -156,7 +161,7 @@ impl Decoder {
     }
 
     fn missing(&self, status: Status) -> DecodedFrame {
-        DecodedFrame { pcm: vec![[0.0, 0.0]; self.p.block], status, quality: QUALITY_MISSING, rb: None, header: None }
+        DecodedFrame { pcm: vec![[0.0, 0.0]; self.p.block], status, quality: QUALITY_MISSING, rb: None, header: None, gap: 0.0 }
     }
 
     /// 1 フレームの受信シンボル（プリアンブル込み、±1 = 1.0。届かなければ None）→ 復号結果。返り値の 2 つ目は Chase 救済で反転した bit の数。
@@ -185,7 +190,8 @@ impl Decoder {
             (Status::HighFail, QUALITY_HIGH_MISSING)
         };
         let (coef, rb) = soft_coeffs(lay, &u.bd, &p1, u.high_ok);
-        let frame = DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), header: Some((u.counter, u.bd)) };
+        let gap = u.gap;
+        let frame = DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), header: Some((u.counter, u.bd)), gap };
         (frame, u.rank)
     }
 
@@ -199,6 +205,8 @@ impl Decoder {
         let mut valid = vec![false; nf * b];
         let mut rb = vec![[[f64::INFINITY; MAX_BANDS]; 2]; nf * b];
         let mut quality = vec![0; nf];
+        let mut status = Vec::with_capacity(nf);
+        let mut gap = Vec::with_capacity(nf);
         let mut stats = Stats { frames: nf, ..Stats::default() };
         let mut tracker = Tracker::new();
         for (i, f) in frames.iter().enumerate() {
@@ -213,6 +221,8 @@ impl Decoder {
                 valid[i * b + t] = d.valid();
             }
             quality[i] = d.quality;
+            status.push(d.status);
+            gap.push(d.gap);
             if let Some(r) = d.rb {
                 for t in 0..h {
                     rb[i * b + t] = r[0];
@@ -229,6 +239,14 @@ impl Decoder {
         }
         let end = (offset + n).min(pcm.len());
         let start = offset.min(end);
-        StreamResult { pcm: pcm[start..end].to_vec(), valid: valid[start..end].to_vec(), quality, rb: rb[start..end].to_vec(), stats }
+        StreamResult {
+            pcm: pcm[start..end].to_vec(),
+            valid: valid[start..end].to_vec(),
+            quality,
+            status,
+            gap,
+            rb: rb[start..end].to_vec(),
+            stats,
+        }
     }
 }

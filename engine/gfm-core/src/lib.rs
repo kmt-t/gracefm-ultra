@@ -9,6 +9,7 @@ pub mod fusion;
 pub mod gen;
 pub mod iir;
 pub mod layout;
+pub mod mend;
 pub mod modem;
 pub mod npz;
 pub mod pcm;
