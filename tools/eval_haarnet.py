@@ -4,7 +4,7 @@ HaarNet-lite の評価 (検証データ)。生LLRの事後平均 E0 と比べる
 通信路 (AWGN/Rayleigh) と Es/N0 の帯域ごとに、誤差エネルギーを合算して SNR を出す。
 列: 全体 (M と S の係数エネルギーの合計 = L/R の SNR と同じ尺度)、M の k=0 (最低域)、S の k=0。
 
-  .venv/bin/python tools/eval_haarnet.py --profile B200 --ckpt runs/hn_B200.pt
+  .venv/bin/python tools/eval_haarnet.py --profile B200 --ckpt runs/baseline/B200.pt
 """
 import argparse
 import glob
@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from prep_haarnet import dataset_index  # noqa: E402
-from gracefm_ultra.haarnet import WIN, build_net, features, haar_matrix, make_meta  # noqa: E402
+from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
 HM = torch.from_numpy(haar_matrix()).float()
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
@@ -39,7 +39,7 @@ def main():
     torch.set_num_threads(min(len(CPUS), 4))
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ck = torch.load(ckpt, map_location="cpu")
-    net = build_net(ck["cfg"]).eval().to(dev)
+    net = HaarNetLite(**ck["cfg"]).eval().to(dev)
     net.load_state_dict(ck["model"])
     p = PROFILES[a.profile]
     rows = []

@@ -3,7 +3,7 @@
 欠落補間のデモ音声。ピアノ (Emotional_piano.wav) の M 成分 (32 kHz) に、長さ g フレームの欠落を一定間隔で入れ、
 各手法で埋めた音を runs/demo/ に WAV (32 kHz、24 bit) で書き出し、SNR と ViSQOL を出す。
 
-  .venv/bin/python tools/demo_plc.py --gaps 8,25 --ckpt runs/plc2.pt
+  .venv/bin/python tools/demo_plc.py --gaps 8,25 --ckpt runs/baseline/plc.pt
 """
 import argparse
 import os
@@ -52,7 +52,7 @@ def main():
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--gaps", default="8,25")
     ap.add_argument("--period-ms", type=float, default=300.0)
-    ap.add_argument("--ckpt", default=os.path.join(HERE, "..", "runs", "plc2.pt"))
+    ap.add_argument("--ckpt", default=os.path.join(HERE, "..", "runs", "baseline", "plc.pt"))
     ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "demo"))
     a = ap.parse_args()
     from visqol import VisqolApi

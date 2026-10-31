@@ -8,7 +8,7 @@
   ar2    AR モデルによる両側補間 (前後 ctx サンプルの文脈)
   net    学習した PLC ネットワーク (--ckpt を指定したとき)
 
-  .venv/bin/python tools/eval_plc.py [--gaps 1,3,8,25] [--ckpt runs/plc.pt]
+  .venv/bin/python tools/eval_plc.py [--gaps 1,3,8,25] [--ckpt runs/baseline/plc.pt]
 """
 import argparse
 import os

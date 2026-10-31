@@ -1,14 +1,23 @@
 # GraceFM-Ultra
 
-[GraceFM](../gracefm) のビットストリームを、PCグレードの受信機（RTL-SDRなど）で高性能に復号する受信側の設計・実装。送信側とフレーム形式は変えない。
+[GraceFM](../gracefm) のビットストリームを、PCグレードの受信機（RTL-SDRなど）で高性能に復号する受信側の実装。送信側とフレーム形式は変えない。
 
-劣化モードがビット反転とフレーム欠損に限られることを利用し、次の3つを一つのベイズ推定にまとめる。
+劣化モードはビット反転とフレーム欠損。それぞれ別のモデルで扱う。
 
-- **PriorNet**: LPC外挿の深層学習版。前後最大200 msの文脈から各Haar係数の分布を予測する。欠落補間と事前分布に使う。
-- **BitNet**: ビット反転判定の深層学習版。軟値と文脈から量子化indexの事後分布を出す。
-- **Wiener超解像**: 量子化・誤りによる雑音と事前分散からWiener利得を決め、最終推定を行う。
+- **HaarNet-lite**（ビット反転）: 全帯域の仮数bitのLLRと刻みから、Haar係数を非因果に推定する。生LLRの事後平均 E0 に対する補正量を、飛び幅つき畳み込み（TCN）が出す。プロファイルごとに学習する。
+- **PlcNet**（欠落補間）: 前後の文脈から欠落フレームを補間する。両端クロスフェードと、欠落区間だけの因果IIR（Butterworth 4次 4 kHz）切替で、Haar基底の漏れによる高域の広帯域雑音を抑える。
 
-制約: バッファ200 msまで、メモリ2 GBまで。現状は設計段階で、実装・測定結果はまだない。
+制約: バッファ200 msまで、メモリ2 GBまで。エンジンの最終形は Rust + ONNX Runtime（未着手）。
+
+## baseline
+
+`runs/baseline/`（`runs/baseline/README.md` に作り方と評価）。改善は、ここを基準にして比べる。
+
+## ディレクトリ
+
+- `gracefm_ultra/`: 受信（`rx.py`）、HaarNet（`haarnet.py`）、PlcNet（`plcnet.py`）、IIR切替（`iir_switch.py`）
+- `tools/`: データ生成（`gen_dataset.py`、`prep_haarnet.py`）、学習（`train_haarnet.py`、`train_plc.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
+- `runs/`: 学習・評価のスクリプトとログ（モデルと一部ログは git 管理外）
 
 ## ライセンス
 
