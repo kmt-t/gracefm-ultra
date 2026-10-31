@@ -99,7 +99,23 @@ def spectral_loss(est, t, S, keep, nfft=512, hop=128, fmin_bin=32, floor=1e-3):
     return ((lo - ro).abs().mean(1) * use).sum() / use.sum().clamp_min(1.0)
 
 
-def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_harm=0.5, spec_floor=1e-3):
+def errspec_loss(est, t, S, keep, nfft=512, hop=128, floor=1e-6):
+    """誤差スペクトルの損失: STFT の各ビンで 誤差 |推定 − 正解|² を正解 |正解|² で割った量の log(1+·) を、全ビン・全フレームで平均する。
+    振幅の対数を比べる spectral_loss と違い、位相のずれも誤差に数える。静かな高域も、大きな低域と同じ重みで効く"""
+    w = _waveform(est * S, None) / S.mean()
+    r = _waveform(t * S, None) / S.mean()
+    B, C, N = w.shape
+    win = torch.hann_window(nfft, device=w.device)
+    Xw = torch.stft(w.reshape(B * C, N), nfft, hop, window=win, return_complex=True)
+    Xr = torch.stft(r.reshape(B * C, N), nfft, hop, window=win, return_complex=True)
+    q = torch.log1p((Xw - Xr).abs() ** 2 / (Xr.abs() ** 2 + floor ** 2)).mean(1)                      # (B*C, フレーム)
+    fr = torch.arange(Xw.shape[-1], device=w.device) * hop + nfft // 2
+    kf = keep[..., 0].repeat_interleave(64, dim=1)[:, :N].repeat_interleave(C, dim=0)
+    use = kf[:, fr.clamp(max=N - 1)]
+    return (q * use).sum() / use.sum().clamp_min(1.0)
+
+
+def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_harm=0.5, spec_floor=1e-3, lam_err=0.0):
     x, S, e0n = features(llr, step, var, lost, meta)
     est = e0n + net(x)
     t = truth / S
@@ -121,8 +137,9 @@ def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_h
     else:
         base = (err / ref).mean()
     harm = (torch.relu(err - err0) / ref).mean()                                       # E0 より悪くした分に罰則
-    spec = spectral_loss(est, t, S, keep, floor=spec_floor)
-    return base + lam_harm * harm + lam_spec * spec, (err0 / ref).mean(), (err / ref).mean()
+    spec = spectral_loss(est, t, S, keep, floor=spec_floor) if lam_spec else 0.0
+    errs = errspec_loss(est, t, S, keep, floor=spec_floor) if lam_err else 0.0
+    return base + lam_harm * harm + lam_spec * spec + lam_err * errs, (err0 / ref).mean(), (err / ref).mean()
 
 
 def main():
@@ -141,6 +158,7 @@ def main():
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
     ap.add_argument("--lam-spec", type=float, default=0.05, help="時間領域スペクトル損失 (2 kHz 以上の対数振幅) の重み")
     ap.add_argument("--spec-floor", type=float, default=1e-3, help="その対数の下限 (正規化単位)。静かな高域を効かせるには 1e-6 程度")
+    ap.add_argument("--lam-err", type=float, default=0.0, help="誤差スペクトル損失 (STFT の各ビンの 誤差/正解 の log(1+·) の平均) の重み")
     ap.add_argument("--lam-harm", type=float, default=0.5, help="E0 より悪化した分への罰則の重み")
     ap.add_argument("--min-esn0", type=float, default=-1e9, help="この Es/N0 [dB] 以上のシナリオだけで学習する")
     a = ap.parse_args()
@@ -175,7 +193,7 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss, base, rel = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)], lam_spec=a.lam_spec, lam_harm=a.lam_harm, spec_floor=a.spec_floor)
+        loss, base, rel = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)], lam_spec=a.lam_spec, lam_harm=a.lam_harm, spec_floor=a.spec_floor, lam_err=a.lam_err)
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
