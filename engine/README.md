@@ -36,5 +36,5 @@ gfm-gen --profile B200 --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 -
 ## 対応範囲
 
 - プロファイル: B200、B200M、M700、M700M、SUB100、SUB50M、SUB100-48K
-- 暫定: 欠落補間は LPC 外挿（`plc.rs`）。本番は PlcNet（DNN、聴感のため）で、ONNX Runtime で載せる予定。載せたら LPC は削除する
+- 暫定: 欠落補間は LPC 外挿（`plc.rs`）。本番は MendNet（DNN、聴感のため）で、ONNX Runtime で載せる予定。載せたら LPC は削除する
 - 未対応: Y 方式（`*Y`）、暗号化、DAC 前のポストフィルタ、等化器とタイミング同期

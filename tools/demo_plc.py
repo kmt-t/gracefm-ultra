@@ -3,7 +3,7 @@
 欠落補間のデモ音声。ピアノ (Emotional_piano.wav) の M 成分 (32 kHz) に、長さ g フレームの欠落を一定間隔で入れ、
 各手法で埋めた音を runs/demo/ に WAV (32 kHz、24 bit) で書き出し、SNR と ViSQOL を出す。
 
-  .venv/bin/python tools/demo_plc.py --gaps 8,25 --ckpt runs/baseline/plc.pt
+  .venv/bin/python tools/demo_plc.py --gaps 8,25 --ckpt runs/baseline/mend.pt
 """
 import argparse
 import os
@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 from eval_plc import BLOCK, FS, GRACEFM, _gfm  # noqa: E402
 from eval_plc_visqol import apply  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
-from gracefm_ultra.plcnet import load_predictor  # noqa: E402
+from gracefm_ultra.mendnet import load_predictor  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 
@@ -52,7 +52,7 @@ def main():
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--gaps", default="8,25")
     ap.add_argument("--period-ms", type=float, default=300.0)
-    ap.add_argument("--ckpt", default=os.path.join(HERE, "..", "runs", "baseline", "plc.pt"))
+    ap.add_argument("--ckpt", default=os.path.join(HERE, "..", "runs", "baseline", "mend.pt"))
     ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "demo"))
     a = ap.parse_args()
     from visqol import VisqolApi

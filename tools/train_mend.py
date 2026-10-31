@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-PlcNet の学習。学習用音源の M 成分 (32 kHz) を Haar 係数にして、200 ms の窓にランダムな欠落 (1〜3 か所、1〜25 フレーム) を作り、
+MendNet の学習。学習用音源の M 成分 (32 kHz) を Haar 係数にして、200 ms の窓にランダムな欠落 (1〜3 か所、1〜25 フレーム) を作り、
 欠落フレームの係数を予測させる。損失は欠落部の誤差エネルギー ÷ 窓の既知部の信号電力 (係数領域 = 時間領域)。
 文脈には、ビット誤り相当の雑音 (信号比 20〜60 dB) を加える。
 
-  .venv/bin/python tools/train_plc.py --minutes 20 --out runs/plc.pt
+  .venv/bin/python tools/train_mend.py --minutes 20 --out runs/mend.pt
 """
 import argparse
 import os
@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
-from gracefm_ultra.plcnet import BAND, BLOCK, WIN, PlcNet, haar_fwd, prepare  # noqa: E402
+from gracefm_ultra.mendnet import BAND, BLOCK, WIN, MendNet, haar_fwd, prepare  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 CPUS = {0, 1, 5, 6, 7, 11}
@@ -88,7 +88,7 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seconds", type=float, default=150, help="音源ごとに使う長さ")
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
-    ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "plc.pt"))
+    ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "mend.pt"))
     a = ap.parse_args()
     os.sched_setaffinity(0, CPUS)
     torch.set_num_threads(len(CPUS))
@@ -96,7 +96,7 @@ def main():
     coefs = load_train(a.src, a.seconds)
     print(f"学習音源 {len(coefs)} 本、{sum(len(c) for c in coefs) * BLOCK / 32000 / 60:.1f} 分", flush=True)
     cfg = dict(ch=192, blocks=12)
-    net = PlcNet(**cfg)
+    net = MendNet(**cfg)
     print(f"パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
     if a.resume:
         net.load_state_dict(torch.load(a.resume, map_location="cpu")["model"])

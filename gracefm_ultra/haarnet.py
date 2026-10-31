@@ -44,7 +44,7 @@ class Meta:
 
 def haar_matrix():
     """64 点の直交 Haar 合成行列 H (係数 (.., 64) @ H = サンプル (.., 64))。haar_inv と同じ並び [k=0 (4), k=1 (4), k=2 (8), k=3 (16), k=4 (32)]"""
-    from .plcnet import haar_inv
+    from .mendnet import haar_inv
     return np.stack([haar_inv(np.eye(64)[i]) for i in range(64)])
 
 

@@ -5,7 +5,7 @@
 劣化モードはビット反転とフレーム欠損。それぞれ別のモデルで扱う。
 
 - **HaarNet-lite**（ビット反転）: 全帯域の仮数bitのLLRと刻みから、Haar係数を非因果に推定する。生LLRの事後平均 E0 に対する補正量を、飛び幅つき畳み込み（TCN）が出す。プロファイルごとに学習する。
-- **PlcNet**（欠落補間）: 前後の文脈から欠落フレームを補間する。両端クロスフェードと、欠落区間だけの因果IIR（Butterworth 4次 4 kHz）切替で、Haar基底の漏れによる高域の広帯域雑音を抑える。
+- **MendNet**（欠落補間）: 前後の文脈から欠落フレームを補間する。両端クロスフェードと、欠落区間だけの因果IIR（Butterworth 4次 4 kHz）切替で、Haar基底の漏れによる高域の広帯域雑音を抑える。
 
 制約: バッファ200 msまで、メモリ2 GBまで。エンジンの最終形は Rust + ONNX Runtime（未着手）。
 
@@ -15,9 +15,9 @@
 
 ## ディレクトリ
 
-- `gracefm_ultra/`: 受信（`rx.py`）、HaarNet（`haarnet.py`）、PlcNet（`plcnet.py`）、IIR切替（`iir_switch.py`）
+- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、HaarNet（`haarnet.py`）、MendNet（`mendnet.py`）、IIR切替（`iir_switch.py`）
 - `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）
-- `tools/`: データ生成（`gen_hn.py`、Rust の `engine/gfm-gen`）、学習（`train_haarnet.py`、`train_plc.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
+- `tools/`: データ生成（`gen_hn.py`、Rust の `engine/gfm-gen`）、学習（`train_haarnet.py`、`train_mend.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
 - `runs/`: 学習・評価のスクリプトとログ（モデルと一部ログは git 管理外）
 
 ## ライセンス

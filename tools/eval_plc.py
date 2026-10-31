@@ -8,7 +8,7 @@
   ar2    AR モデルによる両側補間 (前後 ctx サンプルの文脈)
   net    学習した PLC ネットワーク (--ckpt を指定したとき)
 
-  .venv/bin/python tools/eval_plc.py [--gaps 1,3,8,25] [--ckpt runs/baseline/plc.pt]
+  .venv/bin/python tools/eval_plc.py [--gaps 1,3,8,25] [--ckpt runs/baseline/mend.pt]
 """
 import argparse
 import os
@@ -56,7 +56,7 @@ def methods(ckpt):
         "ar2": lambda x, a, b: interpolate(x, a, b),
     }
     if ckpt:
-        from gracefm_ultra.plcnet import load_predictor
+        from gracefm_ultra.mendnet import load_predictor
         m["net"] = load_predictor(ckpt)
     return m
 

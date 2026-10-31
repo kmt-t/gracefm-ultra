@@ -3,7 +3,7 @@
 欠落補間の聴感評価 (ViSQOL MOS-LQO) と全体 SNR。検証音源 (M 成分、32 kHz) に、長さ g フレームの欠落を一定間隔で入れ、
 各手法で埋めた信号全体を ViSQOL (audio モード、48 kHz) で原音と比べる。値は音源の平均。
 
-  .venv/bin/python tools/eval_plc_visqol.py --gaps 3,8,25 --ckpt runs/baseline/plc.pt
+  .venv/bin/python tools/eval_plc_visqol.py --gaps 3,8,25 --ckpt runs/baseline/mend.pt
 """
 import argparse
 import os
@@ -16,7 +16,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from eval_plc import BLOCK, FS, GRACEFM, _gfm, val_clips  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
-from gracefm_ultra.plcnet import load_predictor  # noqa: E402
+from gracefm_ultra.mendnet import load_predictor  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 

@@ -21,7 +21,7 @@ from eval_plc_visqol import apply  # noqa: E402
 from gracefm_ultra.iir_switch import iir_switch  # noqa: E402
 from materials import MATERIALS, load  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
-from gracefm_ultra.plcnet import load_predictor  # noqa: E402
+from gracefm_ultra.mendnet import load_predictor  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 BANDS = ((2000, 4000), (4000, 8000), (8000, 16000))
@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--seconds", type=float, default=8.0)
     a = ap.parse_args()
     os.sched_setaffinity(0, {7, 11})
-    net0 = load_predictor(os.path.join(HERE, "..", "runs", "baseline", "plc.pt"), xfade=0)
+    net0 = load_predictor(os.path.join(HERE, "..", "runs", "baseline", "mend.pt"), xfade=0)
     fills = {"zero": lambda x, p, q: np.zeros(q - p), "gfm": _gfm, "ar2": lambda x, p, q: interpolate(x, p, q), "net": net0}
     period = int(0.3 * FS) // BLOCK * BLOCK
     names = list(fills) + ["net+IIR"]

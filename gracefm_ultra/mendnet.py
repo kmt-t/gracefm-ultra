@@ -1,5 +1,5 @@
 """
-PriorNet (欠落フレームの補間): Haar 係数のフレーム列 (WIN フレーム = 200 ms @32 kHz) と欠落マスクから、
+MendNet (欠落フレームの補間): Haar 係数のフレーム列 (WIN フレーム = 200 ms @32 kHz) と欠落マスクから、
 欠落フレームの係数を非因果に予測する。Haar は直交なので、係数領域の誤差エネルギーは時間領域と同じ。
 ONNX に出せる演算 (Conv1d, GELU, GroupNorm) だけで組む。入力の形は固定 (1, 65, WIN)。
 """
@@ -36,7 +36,7 @@ def haar_inv(c):
     return a
 
 
-class PlcNet(nn.Module):
+class MendNet(nn.Module):
     def __init__(self, ch=192, blocks=12):
         super().__init__()
         dil = [1, 2, 4, 8, 16, 32]
@@ -85,7 +85,7 @@ def load_predictor(path, xfade=96):
     from .plc_ar import interpolate
 
     ck = torch.load(path, map_location="cpu")
-    net = PlcNet(**ck["cfg"])
+    net = MendNet(**ck["cfg"])
     net.load_state_dict(ck["model"])
     net.eval()
 

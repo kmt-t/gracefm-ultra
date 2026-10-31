@@ -26,7 +26,7 @@ from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm.receiver import receive  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta, soft_e0  # noqa: E402
-from gracefm_ultra.plcnet import haar_inv  # noqa: E402
+from gracefm_ultra.mendnet import haar_inv  # noqa: E402
 import rs  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
