@@ -19,8 +19,9 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta  # noqa: E402
+from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
+HM = torch.from_numpy(haar_matrix()).float()
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
@@ -49,6 +50,7 @@ def main():
         F = min(a.frames, d["llr"].shape[1])
         for s in range(d["llr"].shape[0]):
             acc = np.zeros(7)           # 信号(全体), E0誤差(全体), net誤差(全体), 信号(M k0), E0(M k0), net(M k0), ...
+            lk = np.zeros((2, 3))       # 漏れ: 帯域 (4-8k, 8-16k) ごとの [原音, E0誤差, net誤差] のパワー (M 成分、欠落のない窓だけ)
             accs = np.zeros(3)          # S の k=0: 信号, E0, net
             starts = list(range(0, F - WIN + 1, WIN - 2 * edge))
             for b0 in range(0, len(starts), 16):
@@ -68,9 +70,21 @@ def main():
                 acc[3:6] += [sq(truth, g0m), sq(e0 - truth, g0m), sq(est - truth, g0m)]
                 if g0s.any():
                     accs += [sq(truth, g0s), sq(e0 - truth, g0s), sq(est - truth, g0s)]
-            rows.append((d["scen"][s][0], d["scen"][s][1], *acc[:6], *accs))
+                Hm = HM.to(dev)
+                wave = lambda c: (c[:, edge:-edge, :64] @ Hm).reshape(c.shape[0], -1)       # M 成分の時間波形 (端を除く)  # noqa: E731
+                wr, w0, w1 = wave(truth), wave(e0 - truth), wave(est - truth)
+                okw = (~lost[:, edge:-edge].any(1)).float()[:, None]
+                win = torch.hann_window(wr.shape[1], device=dev)
+                fr = np.fft.rfftfreq(wr.shape[1], 1 / 32000)
+                for bi, (flo, fhi) in enumerate(((4000, 8000), (8000, 16000))):
+                    m = torch.from_numpy((fr >= flo) & (fr < fhi)).to(dev)
+                    for k_, w_ in enumerate((wr, w0, w1)):
+                        P = (torch.fft.rfft(w_ * win).abs() ** 2)[:, m].sum(1)
+                        lk[bi, k_] += float((P * okw[:, 0]).sum())
+            rows.append((d["scen"][s][0], d["scen"][s][1], *acc[:6], *accs, *lk.reshape(-1)))
     r = np.array(rows)
     snr = lambda s_, e: 10 * np.log10(s_ / np.maximum(e, 1e-30))  # noqa: E731
+    leaks = []
     print(f"{a.profile}: SNR [dB]。欠落フレームを除く全フレーム (CRC 失敗フレームも含む)。各列は E0 → HaarNet-lite")
     print("                         n        全体(M+S)            M k=0 (0-1kHz)          S k=0")
     for fade in (0, 1):
@@ -83,7 +97,13 @@ def main():
             line += f"{snr(c[2], c[3]):6.2f} → {snr(c[2], c[4]):6.2f}    {snr(c[5], c[6]):6.2f} → {snr(c[5], c[7]):6.2f}   "
             line += f"{snr(c[8], c[9]):6.2f} → {snr(c[8], c[10]):6.2f}" if c[8] > 0 else "   --"
             print(line)
+            leaks.append((fade, lo, hi, c[11:17]))
+    print("\n高域の漏れ: 誤差 − 原音 [dB] (M 成分、欠落のない窓、4-8 kHz / 8-16 kHz)。正なら誤差の方が原音より大きい。E0 → HaarNet-lite")
+    for fade, lo, hi, v in leaks:
+        d = lambda i: 10 * np.log10(max(v[i + 1], 1e-30) / max(v[i], 1e-30))  # noqa: E731
+        print(f"{'rayleigh' if fade else 'awgn    '} {lo:2d}-{hi:2d} dB   4-8k: {d(0):+6.1f} → {d(1) if False else 10 * np.log10(max(v[2], 1e-30) / max(v[0], 1e-30)):+6.1f}    8-16k: {10 * np.log10(max(v[4], 1e-30) / max(v[3], 1e-30)):+6.1f} → {10 * np.log10(max(v[5], 1e-30) / max(v[3], 1e-30)):+6.1f}")
 
 
 if __name__ == "__main__":
     main()
+

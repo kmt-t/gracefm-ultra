@@ -67,7 +67,7 @@ def _waveform(coef, ch_of_coef, nblock=64):
     return torch.stack(outs, 1)
 
 
-def spectral_loss(est, t, S, keep, nfft=512, hop=128, fmin_bin=32):
+def spectral_loss(est, t, S, keep, nfft=512, hop=128, fmin_bin=32, floor=1e-3):
     """再構成波形の対数振幅 (2 kHz 以上 = 512 点 FFT で 32 ビン以上) の L1。漏れ雑音 (高域の広帯域雑音) を直接抑える。
     est, t: 正規化した係数 (B, T, ncoef)、S: (B, 1, ncoef) 尺度、keep: (B, T, 1)"""
     w = _waveform(est * S, None) / S.mean()
@@ -76,8 +76,8 @@ def spectral_loss(est, t, S, keep, nfft=512, hop=128, fmin_bin=32):
     win = torch.hann_window(nfft, device=w.device)
     Xw = torch.stft(w.reshape(B * C, N), nfft, hop, window=win, return_complex=True).abs()
     Xr = torch.stft(r.reshape(B * C, N), nfft, hop, window=win, return_complex=True).abs()
-    lo = torch.log(Xw[:, fmin_bin:] + 1e-3)
-    ro = torch.log(Xr[:, fmin_bin:] + 1e-3)
+    lo = torch.log(Xw[:, fmin_bin:] + floor)
+    ro = torch.log(Xr[:, fmin_bin:] + floor)
     nf = Xw.shape[-1]
     fr = torch.arange(nf, device=w.device) * hop + nfft // 2                       # 各 STFT フレームの中心サンプル
     kf = keep[..., 0].repeat_interleave(64, dim=1)[:, :N]                         # (B, N) サンプル単位の有効
@@ -86,7 +86,7 @@ def spectral_loss(est, t, S, keep, nfft=512, hop=128, fmin_bin=32):
     return ((lo - ro).abs().mean(1) * use).sum() / use.sum().clamp_min(1.0)
 
 
-def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_harm=0.5):
+def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_harm=0.5, spec_floor=1e-3):
     x, S, e0n = features(llr, step, var, lost, meta)
     est = e0n + net(x)
     t = truth / S
@@ -108,7 +108,7 @@ def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_h
     else:
         base = (err / ref).mean()
     harm = (torch.relu(err - err0) / ref).mean()                                       # E0 より悪くした分に罰則
-    spec = spectral_loss(est, t, S, keep)
+    spec = spectral_loss(est, t, S, keep, floor=spec_floor)
     return base + lam_harm * harm + lam_spec * spec, (err0 / ref).mean(), (err / ref).mean()
 
 
@@ -123,6 +123,9 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", default="")
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
+    ap.add_argument("--lam-spec", type=float, default=0.05, help="時間領域スペクトル損失 (2 kHz 以上の対数振幅) の重み")
+    ap.add_argument("--spec-floor", type=float, default=1e-3, help="その対数の下限 (正規化単位)。静かな高域を効かせるには 1e-6 程度")
+    ap.add_argument("--lam-harm", type=float, default=0.5, help="E0 より悪化した分への罰則の重み")
     ap.add_argument("--min-esn0", type=float, default=-1e9, help="この Es/N0 [dB] 以上のシナリオだけで学習する")
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
@@ -147,7 +150,7 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss, base, rel = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)])
+        loss, base, rel = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)], lam_spec=a.lam_spec, lam_harm=a.lam_harm, spec_floor=a.spec_floor)
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
