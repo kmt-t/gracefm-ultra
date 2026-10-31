@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--profile", default="B200M")
     ap.add_argument("--ckpt", default="")
     ap.add_argument("--frames", type=int, default=10000)
+    ap.add_argument("--sub", default="hn", help="評価データの置き場 data/<profile>/<sub>/val")
     a = ap.parse_args()
     ckpt = a.ckpt or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
     os.sched_setaffinity(0, CPUS)
@@ -44,7 +45,7 @@ def main():
     p = PROFILES[a.profile]
     rows = []
     edge = 8
-    for f in sorted(glob.glob(os.path.join(HERE, "..", "data", a.profile, "hn", "val", "*.npz"))):
+    for f in sorted(glob.glob(os.path.join(HERE, "..", "data", a.profile, a.sub, "val", "*.npz"))):
         d = np.load(f)
         meta = make_meta(d, p).to(dev)
         cidx = torch.from_numpy(dataset_index(p, Layout(p))[0]).to(dev)

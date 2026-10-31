@@ -1,0 +1,110 @@
+//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。Y 方式と暗号化は未対応）。
+
+#[derive(Clone, Debug)]
+pub struct Profile {
+    pub pid: u32,
+    pub name: &'static str,
+    pub fs: u32,
+    pub block: usize,
+    pub levels: usize,
+    pub bits_m: [i64; 5],
+    pub bits_s: [i64; 5],
+    pub exp_bits: usize,
+    pub protect: [usize; 5],
+    pub qam16h: bool,
+    pub alpha: i64,
+    pub base_m: Option<[i64; 5]>,
+    pub base_s: Option<[i64; 5]>,
+    pub attn_group_m: [usize; 5],
+    pub attn_group_s: [usize; 5],
+    pub y_start_k: Option<usize>,
+    pub format_id: u32,
+}
+
+fn levels_for(fs: u32, block: usize) -> usize {
+    let mut levels = 1;
+    while fs >= (4000u32 << levels) {
+        levels += 1;
+    }
+    assert!(block >> levels >= 1);
+    levels
+}
+
+pub fn band_level(k: usize, levels: usize) -> usize {
+    if k == 0 {
+        levels
+    } else {
+        levels + 1 - k
+    }
+}
+
+impl Profile {
+    pub fn nbands(&self) -> usize {
+        self.levels + 1
+    }
+    pub fn ncoef(&self, k: usize) -> usize {
+        self.block >> band_level(k, self.levels)
+    }
+    /// ch: 0 = M, 1 = S
+    pub fn bits(&self, ch: usize) -> &[i64; 5] {
+        if ch == 0 { &self.bits_m } else { &self.bits_s }
+    }
+    pub fn attenuator_group(&self, ch: usize, k: usize) -> usize {
+        if ch == 0 { self.attn_group_m[k] } else { self.attn_group_s[k] }
+    }
+    pub fn attenuator_bits(&self, ch: usize, k: usize) -> usize {
+        let g = self.attenuator_group(ch, k);
+        if g > 0 { self.ncoef(k) / g } else { 0 }
+    }
+    pub fn layered(&self) -> bool {
+        self.base_m.is_some()
+    }
+    pub fn base_bits(&self, ch: usize, k: usize) -> i64 {
+        if !self.layered() {
+            return self.bits(ch)[k];
+        }
+        if ch == 0 { self.base_m.unwrap()[k] } else { self.base_s.unwrap()[k] }
+    }
+    pub fn protect_bits(&self, k: usize) -> usize {
+        self.protect[k]
+    }
+    pub fn high_k(&self) -> usize {
+        self.nbands() - 2
+    }
+    pub fn frames_per_sec(&self) -> u32 {
+        self.fs / self.block as u32
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn row(
+    pid: u32, name: &'static str, fs: u32, bits_m: [i64; 5], bits_s: [i64; 5], protect: [usize; 5], qam16h: bool,
+    base_m: Option<[i64; 5]>, base_s: Option<[i64; 5]>, attn_m: [usize; 5], attn_s: [usize; 5], y: Option<usize>,
+) -> Profile {
+    Profile {
+        pid, name, fs, block: 64, levels: levels_for(fs, 64), bits_m, bits_s, exp_bits: 4, protect, qam16h,
+        alpha: if qam16h { 5 } else { 1 }, base_m, base_s, attn_group_m: attn_m, attn_group_s: attn_s,
+        y_start_k: y, format_id: 3,
+    }
+}
+
+pub fn profile_by_name(name: &str) -> Option<Profile> {
+    let z = [0i64; 5];
+    let z5 = [0usize; 5];
+    let p2 = [2usize, 1, 1, 1, 1];
+    let q1 = [1usize; 5];
+    Some(match name {
+        "B200M" => row(1, "B200M", 32000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 3, 3, 3]), Some(z), [0, 0, 2, 0, 4], z5, None),
+        "B200" => row(2, "B200", 32000, [10, 11, 7, 7, 7], [10, 7, 7, 7, 7], p2, true, Some([4, 5, 3, 3, 3]), Some([4, 3, 3, 3, 3]), [0, 0, 2, 0, 4], [0, 0, 2, 0, 4], None),
+        "B200MY" => row(3, "B200MY", 32000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 1, 1, 1]), Some(z), [0, 0, 2, 4, 8], z5, Some(2)),
+        "B200Y" => row(4, "B200Y", 32000, [10, 11, 7, 7, 7], [10, 11, 7, 7, 7], p2, true, Some([4, 5, 1, 1, 1]), Some([4, 5, 1, 1, 1]), [0, 0, 2, 4, 8], [0, 0, 2, 4, 8], Some(2)),
+        "SUB50M" => row(5, "SUB50M", 32000, [7, 5, 3, 0, 0], z, q1, false, None, None, [0, 0, 4, 0, 0], z5, None),
+        "SUB100" => row(6, "SUB100", 32000, [7, 7, 3, 0, 0], [5, 3, 3, 0, 0], q1, false, None, None, [0, 0, 4, 0, 0], [0, 0, 4, 0, 0], None),
+        "M700M" => row(7, "M700M", 48000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 3, 3, 3]), Some(z), [0, 0, 2, 0, 4], z5, None),
+        "M700" => row(8, "M700", 48000, [10, 11, 7, 7, 7], [10, 7, 7, 7, 3], p2, true, Some([4, 5, 3, 3, 3]), Some([4, 3, 3, 3, 1]), [0, 0, 2, 0, 4], [0, 0, 2, 0, 4], None),
+        "M700MY" => row(9, "M700MY", 48000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 1, 1, 1]), Some(z), [0, 0, 2, 4, 8], z5, Some(2)),
+        "M700Y" => row(10, "M700Y", 48000, [10, 11, 7, 7, 7], [10, 11, 7, 7, 7], p2, true, Some([4, 5, 1, 1, 1]), Some([4, 5, 1, 1, 1]), [0, 0, 2, 4, 8], [0, 0, 2, 4, 8], Some(2)),
+        "SUB100-48K" => row(11, "SUB100-48K", 48000, [7, 7, 3, 0, 0], [5, 3, 0, 0, 0], q1, false, None, None, [0, 0, 4, 0, 0], [0, 4, 0, 0, 0], None),
+        _ => return None,
+    })
+}
