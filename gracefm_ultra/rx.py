@@ -1,7 +1,7 @@
 """
-float 版の受信器。FEC・CRC の復号は ../gracefm の framing.unpack_recovering をそのまま使い、
+float 版の受信器。FEC・CRC の復号は ../gracefm の decoder.unpack_recovering をそのまま使い、
 その先の仮数の復元を float で行って、係数ごとの事後平均・事後分散を返す。
-現行の整数実装 (StreamDecoder.soft_coeffs) と同じ近似 (ビットは独立) だが、事前分布を後から掛けられるように、
+現行の整数実装 (Decoder.soft_coeffs) と同じ近似 (ビットは独立) だが、事前分布を後から掛けられるように、
 丸めずに平均と分散で出す。係数の単位は ../gracefm と同じ (±1 = 2^22) の実数。
 
 LLR は ../gracefm の整数 LLR (小数2 bit、正 = bit 0 寄り) をそのまま受け取る。
@@ -15,7 +15,7 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(os.path.dirname(os.path.abs
 if GRACEFM not in sys.path:
     sys.path.insert(0, GRACEFM)
 
-from gracefm import framing  # noqa: E402
+from gracefm import decoder  # noqa: E402
 from gracefm.codec import FRAC, attenuator_expanded, exp_range, qmax_of, qmin_of  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.modem import LLR_FRAC  # noqa: E402
@@ -76,12 +76,13 @@ class FloatRx:
         lay, p = self.lay, self.p
         llr = np.asarray(llr, np.int64)
         hard = (llr < 0).astype(np.int64)
-        bd, hdr = framing.unpack_recovering(lay, llr, hard, None)
-        if bd is None:
+        u = decoder.unpack_recovering(lay, llr, hard, None)
+        if u is None:
             return {"ok": False, "high_ok": False, "mean": None, "var": None}
         p1 = 1.0 / (1.0 + np.exp(np.clip(llr[lay.coef_stream_idx] / float(1 << LLR_FRAC), -30, 30)))
+        bd = u.bd
         if lay.n_top:
-            p1[lay.top_coef_idx] = hdr["top_bits"]           # パリティで訂正した上位K bit は確定値
+            p1[lay.top_coef_idx] = u.top_bits           # パリティで訂正した上位K bit は確定値
         hb = (p1 > 0.5).astype(float)
         w = 2.0 ** lay.coef_pos
         du = self._segsum((p1 - hb) * w)
@@ -95,7 +96,7 @@ class FloatRx:
             for k in range(p.nbands):
                 n = p.ncoef(k)
                 b = bits_of[ch][k]
-                if b > 0 and (k < p.high_k or hdr["high_ok"]):
+                if b > 0 and (k < p.high_k or u.high_ok):
                     o = lay.coef_offset[(ch, k)]
                     m = np.clip(bd.mant[ch][k] + du[o:o + n], qmin_of(b, p, ch, k), qmax_of(b))
                     a = attenuator_expanded(bd.attn[ch][k], p.attenuator_group(ch, k), n)
@@ -105,5 +106,5 @@ class FloatRx:
                     mean[ci, base:base + n] = m * step
                     var[ci, base:base + n] = (dv[o:o + n] + 1.0 / 12) * step ** 2
                 base += n
-        return {"ok": True, "high_ok": bool(hdr["high_ok"]), "mean": mean, "var": var,
+        return {"ok": True, "high_ok": bool(u.high_ok), "mean": mean, "var": var,
                 "p1": p1, "steps": steps}

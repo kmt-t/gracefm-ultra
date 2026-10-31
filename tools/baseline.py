@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 
 from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm.txrx import Transmitter, receive  # noqa: E402
+from gracefm.encoder import Encoder  # noqa: E402
+from gracefm.receiver import receive  # noqa: E402
 from tools.common import metrics, wavio  # noqa: E402
 from gracefm_ultra.channels import loss_mask  # noqa: E402
 
@@ -29,7 +30,7 @@ AUDIO = ["lossless/Emotional_piano.wav", "lossless/Ceramic_Djembe.wav",
 def run(x, p, esn0, rate, burst, seed):
     rng = np.random.default_rng(seed)
     xi = wavio.to_pcm24(x)
-    fr = Transmitter(p, 0, 0).run(xi)
+    fr = Encoder(p, 0, 0).run(xi)
     mask = loss_mask(len(fr), rate, burst, rng)
     rx = [None if m else chan.adc(chan.awgn(f / float(1 << modem.SYM_FRAC), esn0, rng)) for f, m in zip(fr, mask)]
     y, st = receive(p, rx, None, len(x), 0)
