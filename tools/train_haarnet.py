@@ -20,7 +20,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.haarnet import WIN, build_net, unet_cfg, features, haar_matrix, make_meta  # noqa: E402
+from gracefm_ultra.haarnet import WIN, build_net, tunet_cfg, unet_cfg, features, haar_matrix, make_meta  # noqa: E402
 
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
@@ -132,7 +132,7 @@ def main():
     ap.add_argument("--bs", type=int, default=64)
     ap.add_argument("--ch", type=int, default=192)
     ap.add_argument("--blocks", type=int, default=10)
-    ap.add_argument("--arch", default="lite", choices=["lite", "unet"], help="lite: 飛び幅つき畳み込みの TCN、unet: 帯域方向の U-Net (各帯域の特徴量を横から入れる)")
+    ap.add_argument("--arch", default="lite", choices=["lite", "unet", "tunet"], help="lite: 飛び幅つき畳み込みを一列に積んだ TCN、unet: 帯域方向の U-Net (各帯域の特徴量を横から入れる)、tunet: 標準の U-Net (フレーム方向に縮めて戻す) + TCN ブロック")
     ap.add_argument("--rounds", type=int, default=1, help="unet の往復回数 (重み共有で反復し、毎回 E0 の位置へ現在の推定を戻す)")
     ap.add_argument("--widths", default="", help="unet の段ごとのチャンネル数 (細かい帯域から、カンマ区切り)")
     ap.add_argument("--cpu", action="store_true", help="GPU があっても CPU で学習する")
@@ -154,7 +154,9 @@ def main():
     from gracefm.layout import Layout
     _cidx, _ = dataset_index(PROFILES[a.profile], Layout(PROFILES[a.profile]))
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
-    if a.arch == "unet":
+    if a.arch == "tunet":
+        cfg = tunet_cfg(meta, [int(v) for v in a.widths.split(",")] if a.widths else None)
+    elif a.arch == "unet":
         cfg = unet_cfg(meta, [int(v) for v in a.widths.split(",")] if a.widths else None, a.rounds)
     else:
         cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=a.ch, blocks=a.blocks)

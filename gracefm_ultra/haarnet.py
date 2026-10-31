@@ -177,8 +177,49 @@ class HaarNetUNet(nn.Module):
         return out
 
 
+class HaarTUNet(nn.Module):
+    """標準的な U-Net (フレーム方向に 1/2 ずつ縮めて戻し、同じ解像度どうしをスキップで連結する) に TCN ブロックを入れたもの。
+    全帯域の特徴量を最初に 1×1 畳み込みで混ぜる点は HaarNetLite と同じ。最終層は 0 初期化 (学習前は E0 と同じ)。
+    フレーム数は 2^(段数-1) の倍数に右側を 0 埋めして処理し、出力で切り戻す"""
+
+    def __init__(self, cin, nc, widths=(128, 160, 192, 224), **_):
+        super().__init__()
+        n = len(widths) - 1
+        self.depth = n
+        self.inp = nn.Conv1d(cin, widths[0], 1)
+        self.enc = nn.ModuleList([_Block(widths[i], 1) for i in range(n)])
+        self.down = nn.ModuleList([nn.Conv1d(widths[i], widths[i + 1], 2, stride=2) for i in range(n)])
+        self.mid = nn.Sequential(_Block(widths[n], 1), _Block(widths[n], 2))
+        self.up = nn.ModuleList([nn.ConvTranspose1d(widths[i + 1], widths[i], 2, stride=2) for i in range(n)])
+        self.fuse = nn.ModuleList([nn.Conv1d(2 * widths[i], widths[i], 1) for i in range(n)])
+        self.dec = nn.ModuleList([_Block(widths[i], 2) for i in range(n)])
+        self.out = nn.Conv1d(widths[0], nc, 1)
+        nn.init.zeros_(self.out.weight)
+        nn.init.zeros_(self.out.bias)
+
+    def forward(self, x):
+        T = x.shape[2]
+        x = nn.functional.pad(x, (0, (-T) % (2 ** self.depth)))
+        h = self.inp(x)
+        skips = []
+        for e, d in zip(self.enc, self.down):
+            h = e(h)
+            skips.append(h)
+            h = d(h)
+        h = self.mid(h)
+        for i in range(self.depth - 1, -1, -1):
+            h = self.dec[i](self.fuse[i](torch.cat([self.up[i](h), skips[i]], 1)))
+        return self.out(h)[:, :, :T].transpose(1, 2)
+
+
+def tunet_cfg(meta, widths=None):
+    return dict(arch="tunet", cin=meta.c_in, nc=meta.ncoef, widths=list(widths or (128, 160, 192, 224)))
+
+
 def build_net(cfg):
     """チェックポイントの cfg から網を作る (arch がなければ旧来の HaarNetLite)"""
+    if cfg.get("arch") == "tunet":
+        return HaarTUNet(**cfg)
     if cfg.get("arch") == "unet":
         return HaarNetUNet(**cfg)
     return HaarNetLite(**cfg)
