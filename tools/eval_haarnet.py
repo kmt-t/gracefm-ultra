@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--profile", default="B200M")
     ap.add_argument("--ckpt", default="")
     ap.add_argument("--frames", type=int, default=10000)
-    ap.add_argument("--sub", default="hn", help="評価データの置き場 data/<profile>/<sub>/val")
+    ap.add_argument("--sub", default="hn_big", help="評価データの置き場 data/<profile>/<sub>/val")
     a = ap.parse_args()
     ckpt = a.ckpt or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
     os.sched_setaffinity(0, CPUS)

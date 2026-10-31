@@ -25,7 +25,7 @@ from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
-def load(split, profile, sub="hn"):
+def load(split, profile, sub="hn_big"):
     out = []
     for f in sorted(glob.glob(os.path.join(HERE, "..", "data", profile, sub, split, "*.npz"))):
         d = np.load(f)
@@ -132,7 +132,7 @@ def main():
     ap.add_argument("--bs", type=int, default=64)
     ap.add_argument("--ch", type=int, default=192)
     ap.add_argument("--blocks", type=int, default=10)
-    ap.add_argument("--train-sub", default="hn", help="学習データの置き場 data/<profile>/<train-sub>/train (評価は常に hn/val)")
+    ap.add_argument("--train-sub", default="hn_big", help="学習データの置き場 data/<profile>/<train-sub>/train")
     ap.add_argument("--cpu", action="store_true", help="GPU があっても CPU で学習する")
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", default="")
