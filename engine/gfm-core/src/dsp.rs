@@ -56,3 +56,52 @@ pub fn sq_err(err: i64, shift: i64) -> i64 {
     let r = (err >> shift).clamp(-(1 << (CONST_BITS - 1)), (1 << (CONST_BITS - 1)) - 1);
     r * r
 }
+
+#[inline]
+pub fn saturate_bits(v: i64, bits: u32) -> i64 {
+    let lim = (1i64 << (bits - 1)) - 1;
+    v.clamp(-lim, lim)
+}
+
+// ---------------------------------------------------------------- log と exp（表を使わない）
+pub const LN2_Q15: i64 = 22713;
+pub const LOG2E_Q8_PER_LLR: i64 = 23637;
+pub const ONE: i64 = 1 << 15;
+
+/// 正の整数 x の log2(x) × 2^8
+pub fn log2_q8(x: i64) -> i64 {
+    let msb = 63 - (x as u64).leading_zeros() as i64;
+    let mut m = if msb <= 15 { (x << 15) >> msb } else { x >> (msb - 15) };
+    let mut frac = 0i64;
+    for _ in 0..8 {
+        m = (m * m) >> 15;
+        frac <<= 1;
+        if m >= 2 * ONE {
+            m >>= 1;
+            frac |= 1;
+        }
+    }
+    (msb << 8) + frac
+}
+
+/// 2^(-d) を Q15 で（d >= 0、Q8）
+pub fn pow2_neg_q15(d_q8: i64) -> i64 {
+    let t = ((d_q8 & 255) * LN2_Q15) >> 8;
+    let mut r = ONE;
+    for k in (1..=7).rev() {
+        r = ONE - (((t * r) >> 15) / k);
+    }
+    r >> (d_q8 >> 8).min(31)
+}
+
+/// 1 / (1 + 2^d) を Q15 で（d は符号つき、Q8）
+pub fn inv1p2pow_q15(d_q8: i64) -> i64 {
+    let x = pow2_neg_q15(d_q8.abs().min(16 << 8));
+    let w = (x << 15) / (x + ONE);
+    if d_q8 >= 0 { w } else { ONE - w }
+}
+
+/// 整数 LLR（小数 2 bit、正 = 0 らしい）→ ビットが 1 である確率を Q15 で
+pub fn sigmoid_q15(llr: i64) -> i64 {
+    inv1p2pow_q15((llr * LOG2E_Q8_PER_LLR + 128) >> 8)
+}

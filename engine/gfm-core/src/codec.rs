@@ -167,3 +167,22 @@ pub fn decode_coeffs(bd: &BlockData, p: &Profile) -> Vec<Vec<Vec<i64>>> {
         })
         .collect()
 }
+
+/// Haar 逆変換（帯域の並びは haar_forward と同じ）
+pub fn haar_inverse(bands: &[Vec<i64>]) -> Vec<i64> {
+    let mut a = bands[0].clone();
+    for d in &bands[1..] {
+        let mut x = vec![0i64; a.len() * 2];
+        for i in 0..a.len() {
+            x[2 * i] = mac_sq2_inv(a[i], d[i], 1);
+            x[2 * i + 1] = mac_sq2_inv(a[i], d[i], -1);
+        }
+        a = x;
+    }
+    a
+}
+
+/// M/S（小数 22 bit）→ L/R（符号つき 24 bit PCM）。L = M + S、R = M - S
+pub fn ms_to_lr(m: i64, s: i64) -> [i64; 2] {
+    [saturate_bits((m + s) << 1, 24), saturate_bits((m - s) << 1, 24)]
+}

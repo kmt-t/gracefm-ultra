@@ -107,7 +107,7 @@ impl Modem {
     }
 
     /// プリアンブルを除いた受信シンボル → (LLR（送信順、先頭 n_bits 個）, 軸あたりの雑音分散)
-    pub fn demodulate(&self, sym: &[[i64; 2]], n_bits: usize) -> (Vec<i64>, i64) {
+    pub fn demodulate(&self, sym: &[[i64; 2]], n_bits: usize) -> (Vec<i64>, Vec<u8>, i64) {
         let nsym = sym.len();
         let nlp = self.nlp;
         let sq = |d: i64| {
@@ -132,6 +132,7 @@ impl Modem {
         let var = (total / (2 * nsym).max(1) as i64).max(1);
         let nslot = 2 * nsym;
         let mut llr = vec![0i64; nslot * (1 + nlp)];
+        let mut hard = vec![0u8; nslot * (1 + nlp)];
         let nv = self.vals.len();
         let mut dist = vec![0i64; nv];
         for (n, y) in sym.iter().enumerate() {
@@ -139,7 +140,14 @@ impl Modem {
                 for i in 0..nv {
                     dist[i] = sq(y[ax] - self.vals[i]);
                 }
+                let mut best = 0;
+                for i in 1..nv {
+                    if dist[i] < dist[best] {
+                        best = i;
+                    }
+                }
                 for level in 0..=nlp {
+                    hard[nslot * level + 2 * n + ax] = self.lab[best][level];
                     let (mut d1, mut d0) = (i64::MAX, i64::MAX);
                     for i in 0..nv {
                         if self.lab[i][level] == 1 {
@@ -153,6 +161,7 @@ impl Modem {
             }
         }
         llr.truncate(n_bits);
-        (llr, var)
+        hard.truncate(n_bits);
+        (llr, hard, var)
     }
 }

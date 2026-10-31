@@ -193,7 +193,7 @@ pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, thread
                     continue;
                 }
                 let rx = awgn_adc(&syms[i][N_PREAMBLE..], e, &mut crng);
-                let (l, v) = modem.demodulate(&rx, lay.n_tx);
+                let (l, _, v) = modem.demodulate(&rx, lay.n_tx);
                 var[i] = v;
                 let fix = |q: usize| -> i8 { (if scr[q] == 1 { -l[q] } else { l[q] }).clamp(-127, 127) as i8 };
                 for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {

@@ -49,3 +49,109 @@ pub fn rsc_parity(x: &[u8]) -> (Vec<u8>, Vec<u8>) {
     debug_assert_eq!(&c0[..n], x);
     (c1, c0[n..].to_vec())
 }
+
+// ---------------------------------------------------------------- 整数のビタビ復号
+const NSTATE: usize = 1 << (K - 1);
+const G: [u32; 2] = [0o133, 0o171];
+pub const PM_MIN: i64 = -(1 << 13);
+
+/// 情報ビット列を (133, 171) で符号化する（6 ビットの 0 で終端）。符号化ビットの順序は c0[0], c1[0], c0[1], ...
+pub fn conv_encode(bits: &[u8]) -> Vec<u8> {
+    let n = bits.len() + K - 1;
+    let mut out = vec![0u8; 2 * n];
+    for t in 0..n {
+        for j in 0..2 {
+            let mut v = 0u8;
+            for &d in &TAPS[j] {
+                if t >= d && t - d < bits.len() {
+                    v ^= bits[t - d];
+                }
+            }
+            out[2 * t + j] = v;
+        }
+    }
+    out
+}
+
+struct Trellis {
+    p0: [usize; NSTATE],
+    p1: [usize; NSTATE],
+    b0: [usize; NSTATE],
+    b1: [usize; NSTATE],
+    forced: [bool; NSTATE],
+}
+
+fn trellis() -> Trellis {
+    let out = |s: usize, u: usize, j: usize| -> i64 { (((u << (K - 1)) | s) as u32 & G[j]).count_ones() as i64 & 1 };
+    let mut t = Trellis { p0: [0; NSTATE], p1: [0; NSTATE], b0: [0; NSTATE], b1: [0; NSTATE], forced: [false; NSTATE] };
+    for ns in 0..NSTATE {
+        let u = ns >> (K - 2);
+        let p0 = (ns << 1) & (NSTATE - 1);
+        let p1 = p0 | 1;
+        let idx = |p: usize| -> usize {
+            let s0 = 1 - 2 * out(p, u, 0);
+            let s1 = 1 - 2 * out(p, u, 1);
+            ((1 - s0) + (1 - s1) / 2) as usize
+        };
+        t.p0[ns] = p0;
+        t.p1[ns] = p1;
+        t.b0[ns] = idx(p0);
+        t.b1[ns] = idx(p1);
+        t.forced[ns] = u == 1;
+    }
+    t
+}
+
+/// soft: 長さ 2*(nbits+6) の整数の軟値 → 復号ビット（nbits）
+pub fn viterbi_decode(soft: &[i64], nbits: usize) -> Vec<u8> {
+    let tr = trellis();
+    let l = nbits + K - 1;
+    let mut pm = [PM_MIN; NSTATE];
+    pm[0] = 0;
+    let mut choice = vec![[0u8; NSTATE]; l];
+    for t in 0..l {
+        let (r0, r1) = (soft[2 * t], soft[2 * t + 1]);
+        let bm = [r0 + r1, r0 - r1, -r0 + r1, -r0 - r1];
+        let mut np = [0i64; NSTATE];
+        for ns in 0..NSTATE {
+            let m0 = pm[tr.p0[ns]] + bm[tr.b0[ns]];
+            let m1 = pm[tr.p1[ns]] + bm[tr.b1[ns]];
+            choice[t][ns] = (m1 > m0) as u8;
+            np[ns] = m0.max(m1);
+        }
+        if t >= nbits {
+            for ns in 0..NSTATE {
+                if tr.forced[ns] {
+                    np[ns] = PM_MIN;
+                }
+            }
+        }
+        let mx = *np.iter().max().unwrap();
+        for ns in 0..NSTATE {
+            pm[ns] = (np[ns] - mx).max(PM_MIN);
+        }
+    }
+    let mut s = 0usize;
+    let mut bits = vec![0u8; l];
+    for t in (0..l).rev() {
+        bits[t] = (s >> (K - 2)) as u8;
+        s = ((s << 1) & (NSTATE - 1)) | choice[t][s] as usize;
+    }
+    bits.truncate(nbits);
+    bits
+}
+
+/// x_soft（n）、parity_soft（n+6）、tail_soft（6）: 整数の軟値（正 = 0 らしい）→ 訂正後の情報ビット（n）
+pub fn rsc_decode(x_soft: &[i64], parity_soft: &[i64], tail_soft: &[i64]) -> Vec<u8> {
+    let n = x_soft.len();
+    let mut r = vec![0i64; 2 * (n + K - 1)];
+    for (i, &v) in x_soft.iter().chain(tail_soft).enumerate() {
+        r[2 * i] = v;
+    }
+    for (i, &v) in parity_soft.iter().enumerate() {
+        r[2 * i + 1] = v;
+    }
+    let u = viterbi_decode(&r, n);
+    let c = conv_encode(&u);
+    (0..n).map(|i| c[2 * i]).collect()
+}

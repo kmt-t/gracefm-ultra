@@ -1,5 +1,5 @@
 [workspace]
-members = ["gfm-core", "gfm-gen"]
+members = ["gfm-core", "gfm-gen", "gfm-rx"]
 resolver = "2"
 
 [workspace.package]

@@ -56,3 +56,123 @@ pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u
     }
     stream
 }
+
+// ---------------------------------------------------------------- 受信
+
+pub const RECOVER_CANDIDATES: usize = 7;
+pub const RECOVER_MAX_FLIPS: usize = 2;
+
+pub struct Header {
+    pub high_ok: bool,
+    pub top_bits: Vec<u8>,
+    pub recovered: usize,
+}
+
+fn val(bits: &[u8]) -> u64 {
+    bits.iter().fold(0u64, |a, &b| (a << 1) | b as u64)
+}
+
+/// soft: 送信ビット列全体の軟値（正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None
+pub fn unpack(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<(BlockData, Header)> {
+    use crate::codec::{offset_of, qmax_of, qmin_of};
+    let p = &lay.p;
+    let pick = |idx: &[usize]| -> Vec<i64> { idx.iter().map(|&i| soft[i]).collect() };
+    let prot = fec::rsc_decode(&pick(&lay.hdata_idx), &pick(&lay.hpar_idx), &pick(&lay.htail_idx));
+    let body = &prot[..lay.n_prot];
+    let top: Vec<u8> = if lay.n_top > 0 {
+        let t6 = fec::K - 1;
+        let top_stream: Vec<usize> = lay.top_coef_idx.iter().map(|&i| lay.coef_stream_idx[i]).collect();
+        let mut par = pick(&lay.parity_idx);
+        par.extend(pick(&lay.tail_idx[..t6]));
+        fec::rsc_decode(&pick(&top_stream), &par, &pick(&lay.tail_idx[t6..]))
+    } else {
+        Vec::new()
+    };
+    let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| body[i]).collect();
+    core.extend(lay.core_top.iter().map(|&i| top[i]));
+    let mut high: Vec<u8> = lay.high_prot.iter().map(|&i| body[i]).collect();
+    high.extend(lay.high_top.iter().map(|&i| top[i]));
+    let n_core = fec::CRC_CORE.0;
+    if fec::crc_core(&core) != prot[lay.n_prot..lay.n_prot + n_core] {
+        return None;
+    }
+    let high_ok = !lay.has_high_crc || fec::crc_high(&high) == prot[lay.n_prot + n_core..];
+    let hdr = &body[..lay.header_bits];
+    if val(&hdr[0..4]) != p.pid as u64 || hdr[5] != 0 || val(&hdr[6..8]) != p.format_id as u64 {
+        return None;
+    }
+    let mut coef_bits: Vec<u8> = lay.coef_stream_idx.iter().map(|&i| bits[i]).collect();
+    for (t, &ci) in lay.top_coef_idx.iter().enumerate() {
+        coef_bits[ci] = top[t];
+    }
+    let nb = p.nbands();
+    let mut i = lay.header_bits;
+    let mut eidx = vec![vec![None; nb]; 2];
+    let mut attn = vec![vec![None; nb]; 2];
+    for &(ch, k) in &lay.exp_items {
+        eidx[ch][k] = Some(val(&body[i..i + p.exp_bits]) as i64);
+        i += p.exp_bits;
+    }
+    for &(ch, k) in &lay.exp_items {
+        let count = p.attenuator_bits(ch, k);
+        attn[ch][k] = Some(body[i..i + count].iter().map(|&b| b as i64).collect());
+        i += count;
+    }
+    let mut u_flat = vec![0i64; lay.n_coef];
+    for (j, &cf) in lay.coef_flat.iter().enumerate() {
+        u_flat[cf] += (coef_bits[j] as i64) << lay.coef_pos[j];
+    }
+    let mut mant = vec![vec![None; nb]; 2];
+    for &(ch, k) in &lay.coef_groups {
+        let o = lay.coef_offset[&(ch, k)];
+        let b = p.bits(ch)[k];
+        mant[ch][k] = Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b)).clamp(qmin_of(b), qmax_of(b))).collect());
+    }
+    Some((BlockData { mant, eidx, attn }, Header { high_ok, top_bits: top, recovered: 0 }))
+}
+
+/// 基本 CRC が合わないとき、ヘッダの信頼度の低い bit を 1〜RECOVER_MAX_FLIPS 個反転して CRC が合う候補を探す（Chase 型）
+pub fn unpack_recovering(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<(BlockData, Header)> {
+    if let Some(r) = unpack(lay, soft, bits) {
+        return Some(r);
+    }
+    let mut hdr_idx: Vec<usize> = lay.hdata_idx.clone();
+    hdr_idx.extend(&lay.hpar_idx);
+    let mut order: Vec<usize> = (0..hdr_idx.len()).collect();
+    order.sort_by_key(|&i| soft[hdr_idx[i]].abs()); // 安定ソート
+    let cand: Vec<usize> = order.iter().take(RECOVER_CANDIDATES).map(|&i| hdr_idx[i]).collect();
+    for t in 1..=RECOVER_MAX_FLIPS {
+        let mut comb: Vec<usize> = (0..t).collect();
+        loop {
+            let mut s2 = soft.to_vec();
+            let mut b2 = bits.to_vec();
+            for &c in &comb {
+                let idx = cand[c];
+                s2[idx] = -s2[idx];
+                b2[idx] ^= 1;
+            }
+            if let Some((bd, mut h)) = unpack(lay, &s2, &b2) {
+                h.recovered = t;
+                return Some((bd, h));
+            }
+            // 次の組み合わせ（辞書順）
+            let mut i = t;
+            let mut done = true;
+            while i > 0 {
+                i -= 1;
+                if comb[i] != i + cand.len() - t {
+                    comb[i] += 1;
+                    for j in i + 1..t {
+                        comb[j] = comb[j - 1] + 1;
+                    }
+                    done = false;
+                    break;
+                }
+            }
+            if done {
+                break;
+            }
+        }
+    }
+    None
+}
