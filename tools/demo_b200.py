@@ -25,7 +25,8 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm.txrx import Transmitter, receive  # noqa: E402
+from gracefm.encoder import Encoder  # noqa: E402
+from gracefm.receiver import receive  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta, soft_e0  # noqa: E402
 from gracefm_ultra.plcnet import haar_inv  # noqa: E402
 from prep_haarnet import steps_of  # noqa: E402
@@ -97,7 +98,7 @@ def main():
     _, group = dataset_index(p, lay)
     npz_like["group"] = group
     meta = make_meta(npz_like, p)
-    frames = Transmitter(p, 0, 0).run(xi[:n])
+    frames = Encoder(p, 0, 0).run(xi[:n])
     scr = modem.prbs(lay.n_tx)
     n_pre = modem.N_PREAMBLE
     nsym = modem.n_symbols(lay.n_tx, lay.n_strong, p.modulation)

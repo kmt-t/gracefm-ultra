@@ -20,7 +20,8 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.rx import GRACEFM  # noqa: E402,F401
 from gracefm import channel as chan, framing, modem  # noqa: E402
-from gracefm.codec import decode_coeffs, encode_block, haar_forward  # noqa: E402
+from gracefm.codec import encode_block, haar_forward  # noqa: E402
+from gracefm.decoder import reconstruct_coeffs  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from prep_haarnet import clip_pcm, dataset_index, steps_of  # noqa: E402
@@ -53,7 +54,7 @@ def python_ref(p, x, nfr, e0):
         l, _, v = modem.demodulate(rx[modem.N_PREAMBLE:], lay.n_tx, p.modulation, p.alpha)
         llr[i] = np.clip(np.where(scr == 1, -l, l), -127, 127)
         var[i] = v
-        co = decode_coeffs(bd, p)
+        co = reconstruct_coeffs(bd, p)
         ms = {"M": (blk[:, 0] + blk[:, 1] + 2) >> 2, "S": (blk[:, 0] - blk[:, 1] + 2) >> 2}
         for ci, ch in enumerate(("M", "S")):
             coefq[i, ci] = np.concatenate(co[ch])
