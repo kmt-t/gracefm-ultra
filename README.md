@@ -20,6 +20,11 @@
 - `tools/`: データ生成（`gen_hn.py`、Rust の `engine/gfm-gen`）、学習（`train_haarnet.py`、`train_mend.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
 - `runs/`: 学習・評価のスクリプトとログ（モデルと一部ログは git 管理外）
 
+## 設計
+
+- `docs/DESIGN.md`: Rust エンジン（送信と受信の対称な構成）
+- `docs/MENDNET.md`: MendNet（欠落・壊れたフレームの補間）、副系を使うヘッダの復元
+
 ## ライセンス
 
 [PolyForm Noncommercial License 1.0.0](LICENSE)（GraceFMと同じ）。`NOTICE` の Required Notice を保持すること。GraceFMに依存するため、その条件にも従う。
