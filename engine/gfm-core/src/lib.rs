@@ -5,6 +5,7 @@ pub mod encoder;
 pub mod dsp;
 pub mod fec;
 pub mod framing;
+pub mod float_rx;
 pub mod fusion;
 pub mod gen;
 pub mod iir;

@@ -29,6 +29,16 @@ impl Scrambler {
         }
     }
 
+    /// 浮動小数点の LLR 用
+    pub fn descramble_f(&self, llr: &mut [f64], hard: &mut [u8]) {
+        for i in 0..llr.len() {
+            if self.seq[i] == 1 {
+                llr[i] = -llr[i];
+            }
+            hard[i] ^= self.seq[i];
+        }
+    }
+
     /// 単独の LLR の符号を戻す（位置 i）
     pub fn sign(&self, i: usize) -> bool {
         self.seq[i] == 1

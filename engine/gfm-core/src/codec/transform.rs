@@ -59,3 +59,52 @@ pub fn synthesize(bands: &[Vec<Vec<i64>>]) -> Vec<[i64; 2]> {
     let s = haar_inverse(&bands[1]);
     (0..m.len()).map(|i| ms_to_lr(m[i], s[i])).collect()
 }
+
+// ---------------------------------------------------------------- 浮動小数点（Ultra の本番経路）。係数の尺度は整数版と同じ（±1 = 満点の振幅）
+
+const SQRT_HALF: f64 = std::f64::consts::FRAC_1_SQRT_2;
+
+pub fn haar_forward_f(x: &[f64], levels: usize) -> Vec<Vec<f64>> {
+    let mut a = x.to_vec();
+    let mut details = Vec::new();
+    for _ in 0..levels {
+        let n = a.len() / 2;
+        let mut d = Vec::with_capacity(n);
+        let mut s = Vec::with_capacity(n);
+        for i in 0..n {
+            let (e, o) = (a[2 * i], a[2 * i + 1]);
+            d.push((e - o) * SQRT_HALF);
+            s.push((e + o) * SQRT_HALF);
+        }
+        details.push(d);
+        a = s;
+    }
+    let mut out = vec![a];
+    out.extend(details.into_iter().rev());
+    out
+}
+
+pub fn haar_inverse_f(bands: &[Vec<f64>]) -> Vec<f64> {
+    let mut a = bands[0].clone();
+    for d in &bands[1..] {
+        let mut x = vec![0f64; a.len() * 2];
+        for i in 0..a.len() {
+            x[2 * i] = (a[i] + d[i]) * SQRT_HALF;
+            x[2 * i + 1] = (a[i] - d[i]) * SQRT_HALF;
+        }
+        a = x;
+    }
+    a
+}
+
+/// 帯域係数（浮動小数点）→ L/R（満点 ±1）。L = M + S、R = M - S
+pub fn synthesize_f(bands: &[Vec<Vec<f64>>]) -> Vec<[f64; 2]> {
+    let m = haar_inverse_f(&bands[0]);
+    let s = haar_inverse_f(&bands[1]);
+    (0..m.len()).map(|i| [m[i] + s[i], m[i] - s[i]]).collect()
+}
+
+/// L/R（満点 ±1）→ M/S。M = (L+R)/2、S = (L-R)/2
+pub fn ms_split_f(x: &[[f64; 2]]) -> [Vec<f64>; 2] {
+    [x.iter().map(|v| (v[0] + v[1]) * 0.5).collect(), x.iter().map(|v| (v[0] - v[1]) * 0.5).collect()]
+}

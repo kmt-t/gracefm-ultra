@@ -5,14 +5,11 @@
 use crate::codec::quant::{dequantize_soft, Rb, INF_LOG};
 use crate::codec::synthesize;
 use crate::dsp::sigmoid_q15;
-use crate::framing::{unpack, Unpacked};
+use crate::framing::{unpack, unpack_recovering_with, Unpacked};
 use crate::layout::Layout;
 use crate::modem::{Modem, N_PREAMBLE};
 use crate::profiles::Profile;
 use crate::scrambler::Scrambler;
-
-const RECOVER_CANDIDATES: usize = 7;
-const RECOVER_MAX_FLIPS: usize = 2;
 
 /// 品質コード: 0 正常、1 高域欠落、2 欠落
 pub const Q_OK: i64 = 0;
@@ -66,50 +63,9 @@ impl Decoder {
         Ok(Decoder { p: p.clone(), lay, modem, scrambler, digital_nsym, high_absent, stats: Stats::default() })
     }
 
-    /// 基本 CRC が合わないとき、ヘッダの信頼度の低い bit を 1〜RECOVER_MAX_FLIPS 個反転して CRC が合う候補を探す（Chase 型）。返り値の 2 つ目は反転した個数
+    /// Chase 救済つきの unpack。返り値の 2 つ目は反転した個数
     fn unpack_recovering(&self, soft: &[i64], bits: &[u8]) -> Option<(Unpacked, usize)> {
-        let lay = &self.lay;
-        if let Some(r) = unpack(lay, soft, bits) {
-            return Some((r, 0));
-        }
-        let mut hdr_idx: Vec<usize> = lay.hdata_idx.clone();
-        hdr_idx.extend(&lay.hpar_idx);
-        let mut order: Vec<usize> = (0..hdr_idx.len()).collect();
-        order.sort_by_key(|&i| soft[hdr_idx[i]].abs()); // 安定ソート
-        let cand: Vec<usize> = order.iter().take(RECOVER_CANDIDATES).map(|&i| hdr_idx[i]).collect();
-        for t in 1..=RECOVER_MAX_FLIPS {
-            let mut comb: Vec<usize> = (0..t).collect();
-            loop {
-                let mut s2 = soft.to_vec();
-                let mut b2 = bits.to_vec();
-                for &c in &comb {
-                    let idx = cand[c];
-                    s2[idx] = -s2[idx];
-                    b2[idx] ^= 1;
-                }
-                if let Some(r) = unpack(lay, &s2, &b2) {
-                    return Some((r, t));
-                }
-                // 次の組み合わせ（辞書順）
-                let mut i = t;
-                let mut done = true;
-                while i > 0 {
-                    i -= 1;
-                    if comb[i] != i + cand.len() - t {
-                        comb[i] += 1;
-                        for j in i + 1..t {
-                            comb[j] = comb[j - 1] + 1;
-                        }
-                        done = false;
-                        break;
-                    }
-                }
-                if done {
-                    break;
-                }
-            }
-        }
-        None
+        unpack_recovering_with(&self.lay, soft, bits, &|v| -v, &|v: i64| v.abs() as f64, &|s, b| unpack(&self.lay, s, b))
     }
 
     fn lost_frame(&self) -> DecodedFrame {

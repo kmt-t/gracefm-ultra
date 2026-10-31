@@ -155,3 +155,58 @@ pub fn rsc_decode(x_soft: &[i64], parity_soft: &[i64], tail_soft: &[i64]) -> Vec
     let c = conv_encode(&u);
     (0..n).map(|i| c[2 * i]).collect()
 }
+
+// ---------------------------------------------------------------- 浮動小数点のビタビ（Ultra の本番経路）
+/// soft: 長さ 2*(nbits+6) の軟値（正 = 0 らしい、自然対数の LLR）→ 復号ビット（nbits）。経路メトリックは浮動小数点で、正規化だけ行う（飽和なし）
+pub fn viterbi_decode_f(soft: &[f64], nbits: usize) -> Vec<u8> {
+    let tr = trellis();
+    let l = nbits + K - 1;
+    let neg = -1e30f64;
+    let mut pm = [neg; NSTATE];
+    pm[0] = 0.0;
+    let mut choice = vec![[0u8; NSTATE]; l];
+    for t in 0..l {
+        let (r0, r1) = (soft[2 * t], soft[2 * t + 1]);
+        let bm = [r0 + r1, r0 - r1, -r0 + r1, -r0 - r1];
+        let mut np = [0f64; NSTATE];
+        for ns in 0..NSTATE {
+            let m0 = pm[tr.p0[ns]] + bm[tr.b0[ns]];
+            let m1 = pm[tr.p1[ns]] + bm[tr.b1[ns]];
+            choice[t][ns] = (m1 > m0) as u8;
+            np[ns] = m0.max(m1);
+        }
+        if t >= nbits {
+            for ns in 0..NSTATE {
+                if tr.forced[ns] {
+                    np[ns] = neg;
+                }
+            }
+        }
+        let mx = np.iter().cloned().fold(f64::MIN, f64::max);
+        for ns in 0..NSTATE {
+            pm[ns] = (np[ns] - mx).max(neg);
+        }
+    }
+    let mut s = 0usize;
+    let mut bits = vec![0u8; l];
+    for t in (0..l).rev() {
+        bits[t] = (s >> (K - 2)) as u8;
+        s = ((s << 1) & (NSTATE - 1)) | choice[t][s] as usize;
+    }
+    bits.truncate(nbits);
+    bits
+}
+
+pub fn rsc_decode_f(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64]) -> Vec<u8> {
+    let n = x_soft.len();
+    let mut r = vec![0f64; 2 * (n + K - 1)];
+    for (i, &v) in x_soft.iter().chain(tail_soft).enumerate() {
+        r[2 * i] = v;
+    }
+    for (i, &v) in parity_soft.iter().enumerate() {
+        r[2 * i + 1] = v;
+    }
+    let u = viterbi_decode_f(&r, n);
+    let c = conv_encode(&u);
+    (0..n).map(|i| c[2 * i]).collect()
+}

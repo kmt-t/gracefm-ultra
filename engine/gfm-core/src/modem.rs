@@ -164,4 +164,57 @@ impl Modem {
         hard.truncate(n_bits);
         (llr, hard, var)
     }
+
+    /// 浮動小数点の復調（Ultra の本番経路）。sym: プリアンブルを除いた受信シンボル（±1 = 1.0 の実数）。
+    /// 返り値: (LLR（自然対数、正 = 0 らしい、先頭 n_bits 個）, 硬判定, 軸あたりの雑音分散)。LLR = (D1 - D0) / (2σ²)、σ² は最寄りの信号点との差から
+    pub fn demodulate_f(&self, sym: &[[f64; 2]], n_bits: usize) -> (Vec<f64>, Vec<u8>, f64) {
+        let nsym = sym.len();
+        let nlp = self.nlp;
+        let one = (1u64 << SYM_FRAC) as f64;
+        let vals: Vec<f64> = self.vals.iter().map(|&v| v as f64 / one).collect();
+        let nv = vals.len();
+        let mut total = 0f64;
+        for y in sym {
+            for &v in y {
+                let mut bd = f64::MAX;
+                for &c in &vals {
+                    bd = bd.min((v - c) * (v - c));
+                }
+                total += bd;
+            }
+        }
+        let var = (total / (2 * nsym).max(1) as f64).max(1e-12);
+        let nslot = 2 * nsym;
+        let mut llr = vec![0f64; nslot * (1 + nlp)];
+        let mut hard = vec![0u8; nslot * (1 + nlp)];
+        let mut dist = vec![0f64; nv];
+        for (n, y) in sym.iter().enumerate() {
+            for ax in 0..2 {
+                for i in 0..nv {
+                    dist[i] = (y[ax] - vals[i]) * (y[ax] - vals[i]);
+                }
+                let mut best = 0;
+                for i in 1..nv {
+                    if dist[i] < dist[best] {
+                        best = i;
+                    }
+                }
+                for level in 0..=nlp {
+                    hard[nslot * level + 2 * n + ax] = self.lab[best][level];
+                    let (mut d1, mut d0) = (f64::MAX, f64::MAX);
+                    for i in 0..nv {
+                        if self.lab[i][level] == 1 {
+                            d1 = d1.min(dist[i]);
+                        } else {
+                            d0 = d0.min(dist[i]);
+                        }
+                    }
+                    llr[nslot * level + 2 * n + ax] = ((d1 - d0) / (2.0 * var)).clamp(-1000.0, 1000.0);
+                }
+            }
+        }
+        llr.truncate(n_bits);
+        hard.truncate(n_bits);
+        (llr, hard, var)
+    }
 }

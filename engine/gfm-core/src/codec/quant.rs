@@ -208,3 +208,67 @@ pub fn dequantize_soft(bd: &BlockData, lay: &Layout, p1: &[i64], high_ok: bool) 
     }
     Estimate { coef, rb }
 }
+
+// ---------------------------------------------------------------- 浮動小数点の軟判定（Ultra の本番経路）
+
+/// 誤差分散（線形、満点 1.0 に対する二乗）: [半ブロック][成分][帯域]。情報なしは f64::INFINITY
+pub type RbF = [[f64; 5]; 2];
+
+pub struct EstimateF {
+    pub coef: Vec<Vec<Vec<f64>>>,
+    pub rb: [RbF; 2],
+}
+
+/// 受信（浮動小数点）: 仮数の各ビットが 1 である確率 p1（0〜1、coef_items の並び）から、係数の期待値と誤差分散を求める。
+/// 係数は満点 ±1 の尺度。p1 は厳密な sigmoid でよく、整数版のような Q15 の丸めはない。
+pub fn dequantize_soft_f(bd: &BlockData, lay: &Layout, p1: &[f64], high_ok: bool) -> EstimateF {
+    let p = &lay.p;
+    let nb = p.nbands();
+    let mut du = vec![0f64; lay.n_coef];
+    let mut var = vec![0f64; lay.n_coef];
+    for (j, &cf) in lay.coef_flat.iter().enumerate() {
+        let hard = if p1[j] > 0.5 { 1.0 } else { 0.0 };
+        let w = (1u64 << lay.coef_pos[j]) as f64;
+        du[cf] += (p1[j] - hard) * w;
+        var[cf] += p1[j] * (1.0 - p1[j]) * w * w;
+    }
+    let one = (1u64 << FRAC) as f64;
+    let mut coef = vec![vec![Vec::new(); nb]; 2];
+    let mut rb = [[[f64::INFINITY; 5]; 2]; 2];
+    for ch in 0..2 {
+        for k in 0..nb {
+            let b = p.bits(ch)[k];
+            let n = p.ncoef(k);
+            if b == 0 || (k >= p.high_k() && !high_ok) {
+                coef[ch][k] = vec![0.0; n];
+                continue;
+            }
+            let o = lay.coef_offset[&(ch, k)];
+            let (qmax, qmin) = (qmax_of(b) as f64, qmin_of(b) as f64);
+            let mant = bd.mant[ch][k].as_ref().unwrap();
+            let attn = bd.attn[ch][k].as_ref().unwrap();
+            let group = p.attenuator_group(ch, k);
+            let base = bd.eidx[ch][k].unwrap() + exp_range(k, b, p).0 + FRAC;
+            let mut c = Vec::with_capacity(n);
+            let mut rv = Vec::with_capacity(n);
+            for j in 0..n {
+                let m = (mant[j] as f64 + du[o + j]).clamp(qmin, qmax);
+                let a = if group > 0 { attn[j / group] } else { 0 };
+                let step = 2f64.powi((base - a) as i32) / one;
+                c.push(m * step);
+                rv.push((var[o + j] + 1.0 / 12.0) * step * step);
+            }
+            let halves = if n >= 2 {
+                let h = (n / 2) as f64;
+                [rv[..n / 2].iter().sum::<f64>() / h, rv[n / 2..].iter().sum::<f64>() / h]
+            } else {
+                [rv[0], rv[0]]
+            };
+            for hh in 0..2 {
+                rb[hh][ch][k] = halves[hh];
+            }
+            coef[ch][k] = c;
+        }
+    }
+    EstimateF { coef, rb }
+}
