@@ -52,7 +52,7 @@ fn lpc_extrapolates_a_sinusoid() {
     assert_eq!(a[0], 1.0);
     let ext = extrapolate(&hist, 32, 16);
     let err: f64 = ext.iter().enumerate().map(|(i, v)| (v - 0.5 * (w * (128 + i) as f64).sin()).powi(2)).sum::<f64>() / 32.0;
-    // 本家の整数版は rms 誤差 0.101（同じ入力）。浮動小数点版はそれ以下
+    // 上限 0.101 は、本家 Python（整数）の LPC 外挿の同じ入力での rms 誤差
     assert!(err.sqrt() < 0.101, "外挿の誤差 {}", err.sqrt());
 }
 
@@ -75,7 +75,7 @@ fn concealment_fills_a_gap_with_a_plausible_continuation() {
     let y = conceal(&damaged, &valid, 32000, &PlcParams::default());
     let err: f64 = (1000..1032).map(|i| (y[i][0] - x[i][0]).powi(2)).sum::<f64>() / 32.0;
     let sig: f64 = (1000..1032).map(|i| x[i][0].powi(2)).sum::<f64>() / 32.0;
-    // 本家の整数版は 0.158（同じ入力）。浮動小数点版はそれ以下
+    // 上限 0.158 は、本家 Python（整数）の補間の同じ入力での誤差比
     assert!(err < 0.158 * sig, "補間の誤差が大きい: {} / {}", err, sig);
     assert!(y[..1000].iter().zip(&x).all(|(a, b)| a == b), "届いた区間は変えない");
 }

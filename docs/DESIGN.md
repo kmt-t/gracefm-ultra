@@ -34,14 +34,6 @@ GraceFM のビット列・フレーム形式は変えない。Rust の実装（`
 - 2 系統の融合は、帯域ごと・半ブロックごとに w_A = R_B / (R_A + R_B)。情報なしは 0 / 1 / 1/2。
 - 欠落補間は、いまは暫定のハン窓つき LPC（16 次）の外挿（倍精度）。本番は MendNet（DNN）。出力 IIR は真の Butterworth（4 次、4 kHz）。
 
-## 本家（Python）の非対称（本家のリファクタで解消済み）
-
-1. スクランブルが送受信に直書き → `scramble` / `descramble`。
-2. `encode_block` は一括、受信は分散して逆量子化が 2 か所に重複 → `analyze`/`synthesize`、`quantize`/`soft_coeffs`。
-3. `unpack` が `header` 辞書で訂正済みビットを漏らす → `Unpacked`。Chase 救済は外へ。
-4. `StreamDecoder` の隠れた状態 → `decode_frame` の戻り値。
-5. `receive()` が融合・PLC・IIR を一括 → `output_stage` として分離。
-
 ## Rust のモジュール
 
 ```

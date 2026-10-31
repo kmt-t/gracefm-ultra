@@ -62,7 +62,7 @@ pub fn select_by_quality(y: &[[f64; 2]], alt: &[[f64; 2]], quality: &[i64], bloc
     out
 }
 
-/// 欠落・高域欠落のブロックだけ IIR の出力へ切り替える。出力は全体を alt_delay サンプル遅らせて揃える（整数版と同じ）
+/// 欠落・高域欠落のブロックだけ IIR の出力へ切り替える。出力は全体を alt_delay サンプル遅らせて揃える（32 kHz 系 3、48 kHz 系 5）
 pub fn apply_alt(y: &[[f64; 2]], quality: &[i64], fs: usize, block: usize) -> Vec<[f64; 2]> {
     let d = alt_delay(fs);
     let alt = iir_filter(y, &butter4_lowpass(4000.0, fs as f64));
