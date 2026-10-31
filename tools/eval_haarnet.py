@@ -18,7 +18,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
+sys.path.insert(0, HERE)
+from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
+from prep_haarnet import dataset_index  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
 HM = torch.from_numpy(haar_matrix()).float()
@@ -44,6 +47,7 @@ def main():
     for f in sorted(glob.glob(os.path.join(HERE, "..", "data", a.profile, "hn", "val", "*.npz"))):
         d = np.load(f)
         meta = make_meta(d, p).to(dev)
+        cidx = torch.from_numpy(dataset_index(p, Layout(p))[0]).to(dev)
         group = d["group"]
         g0m = group == 0
         g0s = (group == int(np.max(group[:64]) + 1)) if meta.ncoef > 64 else np.zeros(meta.ncoef, bool)   # S の k=0 (M の群の次)
@@ -71,7 +75,10 @@ def main():
                 if g0s.any():
                     accs += [sq(truth, g0s), sq(e0 - truth, g0s), sq(est - truth, g0s)]
                 Hm = HM.to(dev)
-                wave = lambda c: (c[:, edge:-edge, :64] @ Hm).reshape(c.shape[0], -1)       # M 成分の時間波形 (端を除く)  # noqa: E731
+                def wave(c):                                                                # M 成分の時間波形 (端を除く)。ない帯域は 0 で埋める
+                    full = torch.zeros(c.shape[0], c.shape[1] - 2 * edge, 128, device=dev)
+                    full[..., cidx] = c[:, edge:-edge]
+                    return (full[..., :64] @ Hm).reshape(c.shape[0], -1)
                 wr, w0, w1 = wave(truth), wave(e0 - truth), wave(est - truth)
                 okw = (~lost[:, edge:-edge].any(1)).float()[:, None]
                 win = torch.hann_window(wr.shape[1], device=dev)

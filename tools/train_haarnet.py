@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
+sys.path.insert(0, HERE)
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
@@ -55,14 +56,26 @@ def batch(data, bs, rng, min_esn0=-1e9):
 _HM = {}
 
 
-def _waveform(coef, ch_of_coef, nblock=64):
-    """coef: (B, T, ncoef) 係数 → 各成分 (M, S) の時間波形 (B, nch, T*64)。係数の並びは M の 64 → S の 64 (ない成分は無視)"""
+_CIDX = {}
+
+
+def set_cidx(cidx, dev):
+    """coef_offset 順の係数番号 → (成分, 64 係数) の平坦な添字。副系 (k=0..2 だけ) は高域の係数を 0 で埋めるために使う"""
+    _CIDX["c"] = torch.from_numpy(np.asarray(cidx, np.int64))
+
+
+def _waveform(coef, ch_of_coef=None):
+    """coef: (B, T, ncoef) → 各成分 (M, S) の時間波形 (B, nch, T*64)。係数は、ない帯域を 0 で埋めて、成分あたり 64 係数にして逆 Haar にかける"""
     key = coef.device
     if key not in _HM:
         _HM[key] = torch.from_numpy(haar_matrix()).float().to(key)
+    cidx = _CIDX["c"].to(key)
+    full = torch.zeros(coef.shape[0], coef.shape[1], 128, device=key, dtype=coef.dtype)
+    full[..., cidx] = coef
+    ncomp = 2 if int(cidx.max()) >= 64 else 1
     outs = []
-    for c0 in range(0, coef.shape[-1], 64):
-        x = coef[..., c0:c0 + 64] @ _HM[key]                                      # (B, T, 64)
+    for ci in range(ncomp):
+        x = full[..., ci * 64:(ci + 1) * 64] @ _HM[key]                           # (B, T, 64)
         outs.append(x.reshape(x.shape[0], -1))
     return torch.stack(outs, 1)
 
@@ -134,10 +147,14 @@ def main():
     rng = np.random.default_rng(0)
     data = load("train", a.profile)
     meta = make_meta(data[0], PROFILES[a.profile])
+    from prep_haarnet import dataset_index
+    from gracefm.layout import Layout
+    _cidx, _ = dataset_index(PROFILES[a.profile], Layout(PROFILES[a.profile]))
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
     cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=a.ch, blocks=a.blocks)
     net = HaarNetLite(**cfg).to(dev)
     meta.to(dev)
+    set_cidx(_cidx, dev)
     print(f"device {dev}" + (f" ({torch.cuda.get_device_name(0)})" if dev.type == "cuda" else ""), flush=True)
     print(f"{a.profile}: 学習 {len(data)} 音源、bit {meta.nbit}、係数 {meta.ncoef}、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
     if a.resume:
