@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-HaarNet-lite の評価 (検証データ、M 成分 k=0 の SNR)。生LLRの事後平均 E0 と比べる。欠落フレームは除く。
+HaarNet-lite の評価 (検証データ)。生LLRの事後平均 E0 と比べる。欠落フレームを除く。
 通信路 (AWGN/Rayleigh) と Es/N0 の帯域ごとに、誤差エネルギーを合算して SNR を出す。
-比較用に、FEC ありの E0 と Student-t 事前 (eval_prior_multi.py) の最低域の値も、同じ表の形で載せる。
+列: 全体 (M と S の係数エネルギーの合計 = L/R の SNR と同じ尺度)、M の k=0 (最低域)、S の k=0。
 
-  .venv/bin/python tools/eval_haarnet.py --ckpt runs/hn.pt
+  .venv/bin/python tools/eval_haarnet.py --profile B200 --ckpt runs/hn_B200.pt
 """
 import argparse
 import glob
@@ -26,25 +26,32 @@ CPUS = {0, 1, 5, 6, 7, 11}
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--ckpt", default=os.path.join(HERE, "..", "runs", "hn.pt"))
+    ap.add_argument("--profile", default="B200M")
+    ap.add_argument("--ckpt", default="")
     ap.add_argument("--frames", type=int, default=10000)
     a = ap.parse_args()
+    ckpt = a.ckpt or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
     os.sched_setaffinity(0, CPUS)
     torch.set_num_threads(len(CPUS))
-    ck = torch.load(a.ckpt, map_location="cpu")
+    ck = torch.load(ckpt, map_location="cpu")
     net = HaarNetLite(**ck["cfg"]).eval()
     net.load_state_dict(ck["model"])
+    p = PROFILES[a.profile]
     rows = []
     edge = 8
-    for f in sorted(glob.glob(os.path.join(HERE, "..", "data", "B200M", "hn", "val", "*.npz"))):
+    for f in sorted(glob.glob(os.path.join(HERE, "..", "data", a.profile, "hn", "val", "*.npz"))):
         d = np.load(f)
-        meta = make_meta(d, PROFILES["B200M"])
+        meta = make_meta(d, p)
+        group = d["group"]
+        g0m = group == 0
+        g0s = (group == int(np.max(group[:64]) + 1)) if meta.ncoef > 64 else np.zeros(meta.ncoef, bool)   # S の k=0 (M の群の次)
         F = min(a.frames, d["llr"].shape[1])
         for s in range(d["llr"].shape[0]):
-            sig = err0 = err1 = 0.0
+            acc = np.zeros(7)           # 信号(全体), E0誤差(全体), net誤差(全体), 信号(M k0), E0(M k0), net(M k0), ...
+            accs = np.zeros(3)          # S の k=0: 信号, E0, net
             starts = list(range(0, F - WIN + 1, WIN - 2 * edge))
-            for b0 in range(0, len(starts), 32):
-                ss = starts[b0:b0 + 32]
+            for b0 in range(0, len(starts), 16):
+                ss = starts[b0:b0 + 16]
                 cut = lambda arr: torch.from_numpy(np.stack([arr[t:t + WIN] for t in ss]))  # noqa: E731
                 llr, var = cut(d["llr"][s].astype(np.float32)), cut(d["var"][s].astype(np.float32))
                 lost, step, truth = cut(d["lost"][s]), cut(d["step"]), cut(d["coef0"])
@@ -55,21 +62,26 @@ def main():
                 keep = (~lost).float()[..., None].clone()
                 keep[:, :edge] = 0
                 keep[:, -edge:] = 0
-                k0 = keep[..., :1]
-                sig += float(((truth[..., :4] ** 2) * k0).sum())
-                err0 += float((((e0 - truth)[..., :4] ** 2) * k0).sum())
-                err1 += float((((est - truth)[..., :4] ** 2) * k0).sum())
-            rows.append((d["scen"][s][0], d["scen"][s][1], sig, err0, err1))
+                sq = lambda arr, m=None: float((arr ** 2 * keep * (1 if m is None else torch.from_numpy(m).float())).sum())  # noqa: E731
+                acc[:3] += [sq(truth), sq(e0 - truth), sq(est - truth)]
+                acc[3:6] += [sq(truth, g0m), sq(e0 - truth, g0m), sq(est - truth, g0m)]
+                if g0s.any():
+                    accs += [sq(truth, g0s), sq(e0 - truth, g0s), sq(est - truth, g0s)]
+            rows.append((d["scen"][s][0], d["scen"][s][1], *acc[:6], *accs))
     r = np.array(rows)
-    print("最低域 (0-1 kHz) の SNR [dB]。欠落フレームを除く全フレーム (CRC 失敗フレームも含む)")
-    print("                         n      E0(生LLR)   HaarNet-lite   改善")
+    snr = lambda s_, e: 10 * np.log10(s_ / np.maximum(e, 1e-30))  # noqa: E731
+    print(f"{a.profile}: SNR [dB]。欠落フレームを除く全フレーム (CRC 失敗フレームも含む)。各列は E0 → HaarNet-lite")
+    print("                         n        全体(M+S)            M k=0 (0-1kHz)          S k=0")
     for fade in (0, 1):
         for lo, hi in ((0, 6), (6, 10), (10, 14), (14, 20)):
             m = (r[:, 1] == fade) & (r[:, 0] >= lo) & (r[:, 0] < hi)
             if not m.any():
                 continue
-            s_, e0, e1 = r[m, 2].sum(), r[m, 3].sum(), r[m, 4].sum()
-            print(f"{'rayleigh' if fade else 'awgn    '} {lo:2d}-{hi:2d} dB {m.sum():3d}   {10 * np.log10(s_ / e0):10.2f} {10 * np.log10(s_ / e1):14.2f} {10 * np.log10(e0 / e1):+8.2f}")
+            c = r[m].sum(0)
+            line = f"{'rayleigh' if fade else 'awgn    '} {lo:2d}-{hi:2d} dB {m.sum():3d}   "
+            line += f"{snr(c[2], c[3]):6.2f} → {snr(c[2], c[4]):6.2f}    {snr(c[5], c[6]):6.2f} → {snr(c[5], c[7]):6.2f}   "
+            line += f"{snr(c[8], c[9]):6.2f} → {snr(c[8], c[10]):6.2f}" if c[8] > 0 else "   --"
+            print(line)
 
 
 if __name__ == "__main__":
