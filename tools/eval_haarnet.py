@@ -74,7 +74,7 @@ def main():
     print(f"{a.profile}: SNR [dB]。欠落フレームを除く全フレーム (CRC 失敗フレームも含む)。各列は E0 → HaarNet-lite")
     print("                         n        全体(M+S)            M k=0 (0-1kHz)          S k=0")
     for fade in (0, 1):
-        for lo, hi in ((0, 6), (6, 10), (10, 14), (14, 20)):
+        for lo, hi in ((0, 6), (6, 10), (10, 14), (14, 20), (20, 28), (28, 41)):
             m = (r[:, 1] == fade) & (r[:, 0] >= lo) & (r[:, 0] < hi)
             if not m.any():
                 continue
