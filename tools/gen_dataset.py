@@ -36,7 +36,7 @@ from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
 from gracefm_ultra.channels import loss_mask  # noqa: E402
 
-CPUS = {0, 1, 5, 6, 7, 11}      # fireball 側の測定と共有しているので、使ってよいコアはここだけ
+CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
 def scenarios(rng, n):

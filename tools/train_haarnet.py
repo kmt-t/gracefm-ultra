@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta  # noqa: E402
 
-CPUS = {0, 1, 5, 6, 7, 11}
+CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
 def load(split, profile):
@@ -71,7 +71,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", default="B200M")
     ap.add_argument("--minutes", type=float, default=20)
-    ap.add_argument("--bs", type=int, default=32)
+    ap.add_argument("--bs", type=int, default=64)
+    ap.add_argument("--ch", type=int, default=192)
+    ap.add_argument("--blocks", type=int, default=10)
+    ap.add_argument("--cpu", action="store_true", help="GPU があっても CPU で学習する")
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", default="")
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
@@ -79,15 +82,18 @@ def main():
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
     os.sched_setaffinity(0, CPUS)
-    torch.set_num_threads(len(CPUS))
+    torch.set_num_threads(min(len(CPUS), 4))
     rng = np.random.default_rng(0)
     data = load("train", a.profile)
     meta = make_meta(data[0], PROFILES[a.profile])
-    cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=128, blocks=8)
-    net = HaarNetLite(**cfg)
+    dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
+    cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=a.ch, blocks=a.blocks)
+    net = HaarNetLite(**cfg).to(dev)
+    meta.to(dev)
+    print(f"device {dev}" + (f" ({torch.cuda.get_device_name(0)})" if dev.type == "cuda" else ""), flush=True)
     print(f"{a.profile}: 学習 {len(data)} 音源、bit {meta.nbit}、係数 {meta.ncoef}、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
     if a.resume:
-        net.load_state_dict(torch.load(a.resume, map_location="cpu")["model"])
+        net.load_state_dict(torch.load(a.resume, map_location=dev)["model"])
         print(f"{a.resume} から再開 (Es/N0 >= {a.min_esn0})", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     t0, step, run, run0 = time.time(), 0, [], []
@@ -96,7 +102,7 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss, base = loss_fn(net, meta, *batch(data, a.bs, rng, a.min_esn0))
+        loss, base = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)])
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -106,8 +112,8 @@ def main():
         if step % 50 == 0:
             print(f"step {step:5d} {time.time() - t0:5.0f}s  E0 {-10 * np.log10(np.mean(run0[-50:])):6.2f} dB  net {-10 * np.log10(np.mean(run[-50:])):6.2f} dB", flush=True)
         if step % 500 == 0:
-            torch.save({"model": net.state_dict(), "cfg": cfg, "step": step}, out)
-    torch.save({"model": net.state_dict(), "cfg": cfg, "step": step}, out)
+            torch.save({"model": {k: v.cpu() for k, v in net.state_dict().items()}, "cfg": cfg, "step": step}, out)
+    torch.save({"model": {k: v.cpu() for k, v in net.state_dict().items()}, "cfg": cfg, "step": step}, out)
     print(f"終了 step {step}", flush=True)
 
 

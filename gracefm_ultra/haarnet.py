@@ -31,6 +31,12 @@ class Meta:
         self.G = torch.from_numpy(g).float()                      # (ncoef, 群)
         self.count = self.G.sum(0)                                # 群ごとの係数数
 
+    def to(self, dev):
+        """内部のテンソルを dev (cpu / cuda) へ移す"""
+        for k in ("W", "W2", "offset", "qmin", "qmax", "G", "count"):
+            setattr(self, k, getattr(self, k).to(dev))
+        return self
+
     @property
     def c_in(self):
         return self.nbit + 3 * self.ncoef + 2

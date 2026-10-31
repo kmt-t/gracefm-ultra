@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta  # noqa: E402
 
-CPUS = {0, 1, 5, 6, 7, 11}
+CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
 def main():
@@ -32,16 +32,17 @@ def main():
     a = ap.parse_args()
     ckpt = a.ckpt or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
     os.sched_setaffinity(0, CPUS)
-    torch.set_num_threads(len(CPUS))
+    torch.set_num_threads(min(len(CPUS), 4))
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ck = torch.load(ckpt, map_location="cpu")
-    net = HaarNetLite(**ck["cfg"]).eval()
+    net = HaarNetLite(**ck["cfg"]).eval().to(dev)
     net.load_state_dict(ck["model"])
     p = PROFILES[a.profile]
     rows = []
     edge = 8
     for f in sorted(glob.glob(os.path.join(HERE, "..", "data", a.profile, "hn", "val", "*.npz"))):
         d = np.load(f)
-        meta = make_meta(d, p)
+        meta = make_meta(d, p).to(dev)
         group = d["group"]
         g0m = group == 0
         g0s = (group == int(np.max(group[:64]) + 1)) if meta.ncoef > 64 else np.zeros(meta.ncoef, bool)   # S の k=0 (M の群の次)
@@ -52,7 +53,7 @@ def main():
             starts = list(range(0, F - WIN + 1, WIN - 2 * edge))
             for b0 in range(0, len(starts), 16):
                 ss = starts[b0:b0 + 16]
-                cut = lambda arr: torch.from_numpy(np.stack([arr[t:t + WIN] for t in ss]))  # noqa: E731
+                cut = lambda arr: torch.from_numpy(np.stack([arr[t:t + WIN] for t in ss])).to(dev)  # noqa: E731
                 llr, var = cut(d["llr"][s].astype(np.float32)), cut(d["var"][s].astype(np.float32))
                 lost, step, truth = cut(d["lost"][s]), cut(d["step"]), cut(d["coef0"])
                 with torch.no_grad():
@@ -62,7 +63,7 @@ def main():
                 keep = (~lost).float()[..., None].clone()
                 keep[:, :edge] = 0
                 keep[:, -edge:] = 0
-                sq = lambda arr, m=None: float((arr ** 2 * keep * (1 if m is None else torch.from_numpy(m).float())).sum())  # noqa: E731
+                sq = lambda arr, m=None: float((arr ** 2 * keep * (1 if m is None else torch.from_numpy(m).float().to(dev))).sum())  # noqa: E731
                 acc[:3] += [sq(truth), sq(e0 - truth), sq(est - truth)]
                 acc[3:6] += [sq(truth, g0m), sq(e0 - truth, g0m), sq(est - truth, g0m)]
                 if g0s.any():
