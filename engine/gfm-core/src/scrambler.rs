@@ -20,17 +20,7 @@ impl Scrambler {
     }
 
     /// 受信: 復調した LLR と硬判定のスクランブルを戻す（PRBS が 1 の位置で LLR の符号と硬判定を反転する）
-    pub fn descramble(&self, llr: &mut [i64], hard: &mut [u8]) {
-        for i in 0..llr.len() {
-            if self.seq[i] == 1 {
-                llr[i] = -llr[i];
-            }
-            hard[i] ^= self.seq[i];
-        }
-    }
-
-    /// 浮動小数点の LLR 用
-    pub fn descramble_f(&self, llr: &mut [f64], hard: &mut [u8]) {
+    pub fn descramble(&self, llr: &mut [f64], hard: &mut [u8]) {
         for i in 0..llr.len() {
             if self.seq[i] == 1 {
                 llr[i] = -llr[i];

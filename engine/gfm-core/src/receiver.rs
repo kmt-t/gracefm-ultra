@@ -1,15 +1,14 @@
-//! 出力段: 2 系統の融合、クロスフェード、欠落補間（PLC）、出力 IIR 切替。GraceFM `gracefm/txrx.py` の receive の移植。
-//! フレームの復号（decoder.rs）とは分けた、送信に対応のない処理。
+//! 出力段: 2 系統の融合、クロスフェード、欠落補間（PLC）、出力 IIR 切替。GraceFM `gracefm/txrx.py` の receive に相当。
+//! フレームの復号（decoder.rs）とは分けた、送信に対応のない処理。浮動小数点。
 
-use crate::codec::quant::INF_LOG;
-use crate::decoder::{Decoder, Stats};
+use crate::decoder::{Decoder, Stats, StreamOutput};
 use crate::fusion::fuse_band;
 use crate::iir::apply_alt;
 use crate::plc::{conceal, crossfade_switch, PlcParams};
 use crate::profiles::Profile;
 
 pub struct RxOutput {
-    pub pcm: Vec<[i64; 2]>,
+    pub pcm: Vec<[f64; 2]>,
     pub quality: Vec<i64>,
     pub stats_a: Stats,
     pub stats_b: Option<Stats>,
@@ -35,9 +34,9 @@ pub fn block_quality(block: usize, qa: &[i64], qb: Option<&[i64]>, offset_b: usi
         .collect()
 }
 
-/// 2 系統（frames_b = None なら 1 系統）を受信して n サンプルの整数の音声を返す。副系は offset_b サンプル遅れて届く
+/// 2 系統（frames_b = None なら 1 系統）を受信して n サンプルの音声（満点 ±1）を返す。副系は offset_b サンプル遅れて届く
 pub fn receive(
-    profile: &Profile, frames_a: &[Option<Vec<[i64; 2]>>], frames_b: Option<&[Option<Vec<[i64; 2]>>]>, n: usize, offset_b: usize,
+    profile: &Profile, frames_a: &[Option<Vec<[f64; 2]>>], frames_b: Option<&[Option<Vec<[f64; 2]>>]>, n: usize, offset_b: usize,
     profile_b: Option<&Profile>,
 ) -> Result<RxOutput, String> {
     let pb = profile_b.unwrap_or(profile);
@@ -46,7 +45,7 @@ pub fn receive(
     }
     let mut da = Decoder::new(profile)?;
     let a = da.run(frames_a, n, 0);
-    let mut db: Option<(Decoder, crate::decoder::StreamOutput)> = None;
+    let mut db: Option<(Decoder, StreamOutput)> = None;
     let (y, v) = if let Some(fb) = frames_b {
         let mut d = Decoder::new(pb)?;
         let b = d.run(fb, n, offset_b);
@@ -67,10 +66,10 @@ pub fn receive(
         .map(|i| {
             let mut pat = Vec::new();
             for rb in &traces {
-                let r = rb.get(i * profile.block).copied().unwrap_or([[INF_LOG; 5]; 2]);
+                let r = rb.get(i * profile.block).copied().unwrap_or([[f64::INFINITY; 5]; 2]);
                 for ci in 0..2 {
                     for k in 0..profile.nbands() {
-                        pat.push(r[ci][k] != INF_LOG);
+                        pat.push(r[ci][k].is_finite());
                     }
                 }
             }

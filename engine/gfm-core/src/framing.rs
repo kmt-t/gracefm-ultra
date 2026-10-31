@@ -70,29 +70,19 @@ fn val(bits: &[u8]) -> u64 {
     bits.iter().fold(0u64, |a, &b| (a << 1) | b as u64)
 }
 
-/// pack の逆（整数の軟値）。soft: 送信ビット列全体の軟値（正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None。純粋な関数
-pub fn unpack(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<Unpacked> {
-    unpack_with(lay, soft, bits, &fec::rsc_decode)
-}
-
-/// pack の逆（浮動小数点の軟値）
-pub fn unpack_f(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<Unpacked> {
-    unpack_with(lay, soft, bits, &fec::rsc_decode_f)
-}
-
-/// 軟値の型 S と FEC 復号 rsc に依らない unpack の本体
-pub fn unpack_with<S: Copy>(lay: &Layout, soft: &[S], bits: &[u8], rsc: &dyn Fn(&[S], &[S], &[S]) -> Vec<u8>) -> Option<Unpacked> {
+/// pack の逆。soft: 送信ビット列全体の軟値（自然対数の LLR、正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None。純粋な関数
+pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<Unpacked> {
     use crate::codec::{offset_of, qmax_of, qmin_of};
     let p = &lay.p;
-    let pick = |idx: &[usize]| -> Vec<S> { idx.iter().map(|&i| soft[i]).collect() };
-    let prot = rsc(&pick(&lay.hdata_idx), &pick(&lay.hpar_idx), &pick(&lay.htail_idx));
+    let pick = |idx: &[usize]| -> Vec<f64> { idx.iter().map(|&i| soft[i]).collect() };
+    let prot = fec::rsc_decode(&pick(&lay.hdata_idx), &pick(&lay.hpar_idx), &pick(&lay.htail_idx));
     let body = &prot[..lay.n_prot];
     let top: Vec<u8> = if lay.n_top > 0 {
         let t6 = fec::K - 1;
         let top_stream: Vec<usize> = lay.top_coef_idx.iter().map(|&i| lay.coef_stream_idx[i]).collect();
         let mut par = pick(&lay.parity_idx);
         par.extend(pick(&lay.tail_idx[..t6]));
-        rsc(&pick(&top_stream), &par, &pick(&lay.tail_idx[t6..]))
+        fec::rsc_decode(&pick(&top_stream), &par, &pick(&lay.tail_idx[t6..]))
     } else {
         Vec::new()
     };
@@ -143,18 +133,15 @@ pub const RECOVER_CANDIDATES: usize = 7;
 pub const RECOVER_MAX_FLIPS: usize = 2;
 
 /// 基本 CRC が合わないとき、ヘッダの信頼度の低い bit を 1〜RECOVER_MAX_FLIPS 個反転して CRC が合う候補を探す（Chase 型）。
-/// neg: 軟値の符号反転、mag: 信頼度（絶対値）、try_unpack: 軟値と硬判定から unpack する。返り値の 2 つ目は反転した個数
-pub fn unpack_recovering_with<S: Copy>(
-    lay: &Layout, soft: &[S], bits: &[u8], neg: &dyn Fn(S) -> S, mag: &dyn Fn(S) -> f64,
-    try_unpack: &dyn Fn(&[S], &[u8]) -> Option<Unpacked>,
-) -> Option<(Unpacked, usize)> {
-    if let Some(r) = try_unpack(soft, bits) {
+/// 返り値の 2 つ目は反転した個数
+pub fn unpack_recovering(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<(Unpacked, usize)> {
+    if let Some(r) = unpack(lay, soft, bits) {
         return Some((r, 0));
     }
     let mut hdr_idx: Vec<usize> = lay.hdata_idx.clone();
     hdr_idx.extend(&lay.hpar_idx);
     let mut order: Vec<usize> = (0..hdr_idx.len()).collect();
-    order.sort_by(|&a, &b| mag(soft[hdr_idx[a]]).partial_cmp(&mag(soft[hdr_idx[b]])).unwrap()); // 安定ソート
+    order.sort_by(|&a, &b| soft[hdr_idx[a]].abs().partial_cmp(&soft[hdr_idx[b]].abs()).unwrap()); // 安定ソート
     let cand: Vec<usize> = order.iter().take(RECOVER_CANDIDATES).map(|&i| hdr_idx[i]).collect();
     for t in 1..=RECOVER_MAX_FLIPS {
         let mut comb: Vec<usize> = (0..t).collect();
@@ -163,10 +150,10 @@ pub fn unpack_recovering_with<S: Copy>(
             let mut b2 = bits.to_vec();
             for &c in &comb {
                 let idx = cand[c];
-                s2[idx] = neg(s2[idx]);
+                s2[idx] = -s2[idx];
                 b2[idx] ^= 1;
             }
-            if let Some(r) = try_unpack(&s2, &b2) {
+            if let Some(r) = unpack(lay, &s2, &b2) {
                 return Some((r, t));
             }
             // 次の組み合わせ（辞書順）

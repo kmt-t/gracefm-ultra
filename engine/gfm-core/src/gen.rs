@@ -3,7 +3,7 @@
 use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
 
-use crate::codec::{analyze, dequantize_hard, exp_range, FRAC};
+use crate::codec::{analyze, exp_range, reconstruct_hard, FRAC};
 use crate::encoder::Encoder;
 use crate::layout::Layout;
 use crate::modem::{Modem, N_PREAMBLE, SYM_FRAC};
@@ -77,19 +77,22 @@ fn loss_mask(nfr: usize, rate: f64, burst: f64, rng: &mut Pcg64) -> Vec<bool> {
 
 const ADC_BITS: i64 = 12;
 const ADC_ONE: f64 = (1 << (ADC_BITS - 2)) as f64;
+/// 学習データの LLR は整数（自然対数の LLR の 4 倍、±127 に飽和）、雑音分散は (Q22 の距離 / 64)² の単位
+const LLR_SCALE: f64 = 4.0;
+const VAR_UNIT: f64 = (1u64 << 32) as f64;
 
-/// 実数のシンボルに Es/N0 = snr_db の雑音を加え、12 bit の ADC で量子化して、小数 22 bit の整数に直す
-fn awgn_adc(sym: &[[i64; 2]], snr_db: f64, g: &mut Gauss) -> Vec<[i64; 2]> {
+/// 実数のシンボルに Es/N0 = snr_db の雑音を加え、12 bit の ADC で量子化する（返り値は ±1 = 1.0 の実数）
+fn awgn_adc(sym: &[[i64; 2]], snr_db: f64, g: &mut Gauss) -> Vec<[f64; 2]> {
     let n0 = 10f64.powf(-snr_db / 10.0);
     let std = (n0 / 2.0).sqrt();
     let one = (1u64 << SYM_FRAC) as f64;
     sym.iter()
         .map(|s| {
-            let mut o = [0i64; 2];
+            let mut o = [0f64; 2];
             for ax in 0..2 {
                 let v = s[ax] as f64 / one + std * g.normal();
-                let code = (v * ADC_ONE).round_ties_even().clamp(-(1 << (ADC_BITS - 1)) as f64, ((1 << (ADC_BITS - 1)) - 1) as f64) as i64;
-                o[ax] = code << (SYM_FRAC - ADC_BITS + 2);
+                let code = (v * ADC_ONE).round_ties_even().clamp(-(1 << (ADC_BITS - 1)) as f64, ((1 << (ADC_BITS - 1)) - 1) as f64);
+                o[ax] = code / ADC_ONE;
             }
             o
         })
@@ -147,7 +150,7 @@ pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, thread
             bits_full[i * lay.n_tx..(i + 1) * lay.n_tx].copy_from_slice(&stream);
         }
         let bands_all = analyze(blk, p);
-        let dq = dequantize_hard(&bd, p);
+        let dq = reconstruct_hard(&bd, p);
         for &(ch, k) in &lay.coef_groups {
             let o = lay.coef_offset[&(ch, k)];
             let b = p.bits(ch)[k];
@@ -187,8 +190,8 @@ pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, thread
                 }
                 let rx = awgn_adc(&syms[i][N_PREAMBLE..], e, &mut crng);
                 let (l, _, v) = modem.demodulate(&rx, lay.n_tx);
-                var[i] = v;
-                let fix = |q: usize| -> i8 { (if scr.sign(q) { -l[q] } else { l[q] }).clamp(-127, 127) as i8 };
+                var[i] = ((v * VAR_UNIT).round() as i64).max(1);
+                let fix = |q: usize| -> i8 { ((if scr.sign(q) { -l[q] } else { l[q] }) * LLR_SCALE).round().clamp(-127.0, 127.0) as i8 };
                 for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
                     llr[i * nbit + j] = fix(idx);
                 }

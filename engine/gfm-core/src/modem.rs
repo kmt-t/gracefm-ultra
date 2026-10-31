@@ -1,10 +1,6 @@
-//! 変調と復調（GraceFM `gracefm/modem.py` の移植。QPSK と階層 16QAM。Y 方式は未対応）。すべて整数演算。
+//! 変調（送信、整数）と復調（受信、浮動小数点）。GraceFM `gracefm/modem.py` の移植。QPSK と階層 16QAM。Y 方式は未対応。
 
 pub const SYM_FRAC: i64 = 22;
-pub const DIST_BITS: i64 = 17;
-pub const DIST_SHIFT: i64 = SYM_FRAC + 1 - DIST_BITS;
-pub const LLR_MAX: i64 = 127;
-pub const LLR_FRAC: i64 = 2;
 pub const N_PREAMBLE: usize = 16;
 
 pub fn isqrt(n: i64) -> i64 {
@@ -106,68 +102,9 @@ impl Modem {
         out
     }
 
-    /// プリアンブルを除いた受信シンボル → (LLR（送信順、先頭 n_bits 個）, 軸あたりの雑音分散)
-    pub fn demodulate(&self, sym: &[[i64; 2]], n_bits: usize) -> (Vec<i64>, Vec<u8>, i64) {
-        let nsym = sym.len();
-        let nlp = self.nlp;
-        let sq = |d: i64| {
-            let r = (d >> DIST_SHIFT).clamp(-(1 << DIST_BITS), (1 << DIST_BITS) - 1);
-            r * r
-        };
-        let mut total = 0i64;
-        for y in sym {
-            for &v in y {
-                let mut best = 0;
-                let mut bd = i64::MAX;
-                for (i, &c) in self.vals.iter().enumerate() {
-                    let d = (v - c).abs();
-                    if d < bd {
-                        bd = d;
-                        best = i;
-                    }
-                }
-                total += sq(v - self.vals[best]);
-            }
-        }
-        let var = (total / (2 * nsym).max(1) as i64).max(1);
-        let nslot = 2 * nsym;
-        let mut llr = vec![0i64; nslot * (1 + nlp)];
-        let mut hard = vec![0u8; nslot * (1 + nlp)];
-        let nv = self.vals.len();
-        let mut dist = vec![0i64; nv];
-        for (n, y) in sym.iter().enumerate() {
-            for ax in 0..2 {
-                for i in 0..nv {
-                    dist[i] = sq(y[ax] - self.vals[i]);
-                }
-                let mut best = 0;
-                for i in 1..nv {
-                    if dist[i] < dist[best] {
-                        best = i;
-                    }
-                }
-                for level in 0..=nlp {
-                    hard[nslot * level + 2 * n + ax] = self.lab[best][level];
-                    let (mut d1, mut d0) = (i64::MAX, i64::MAX);
-                    for i in 0..nv {
-                        if self.lab[i][level] == 1 {
-                            d1 = d1.min(dist[i]);
-                        } else {
-                            d0 = d0.min(dist[i]);
-                        }
-                    }
-                    llr[nslot * level + 2 * n + ax] = (((d1 - d0) << LLR_FRAC).div_euclid(2 * var)).clamp(-LLR_MAX, LLR_MAX);
-                }
-            }
-        }
-        llr.truncate(n_bits);
-        hard.truncate(n_bits);
-        (llr, hard, var)
-    }
-
-    /// 浮動小数点の復調（Ultra の本番経路）。sym: プリアンブルを除いた受信シンボル（±1 = 1.0 の実数）。
+    /// 復調（浮動小数点）。sym: プリアンブルを除いた受信シンボル（±1 = 1.0 の実数）。
     /// 返り値: (LLR（自然対数、正 = 0 らしい、先頭 n_bits 個）, 硬判定, 軸あたりの雑音分散)。LLR = (D1 - D0) / (2σ²)、σ² は最寄りの信号点との差から
-    pub fn demodulate_f(&self, sym: &[[f64; 2]], n_bits: usize) -> (Vec<f64>, Vec<u8>, f64) {
+    pub fn demodulate(&self, sym: &[[f64; 2]], n_bits: usize) -> (Vec<f64>, Vec<u8>, f64) {
         let nsym = sym.len();
         let nlp = self.nlp;
         let one = (1u64 << SYM_FRAC) as f64;

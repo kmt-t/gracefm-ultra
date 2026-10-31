@@ -1,8 +1,6 @@
-//! 送信と受信の対称性: ノイズなしなら、Decoder(Encoder(x)) は硬判定の decode_block(encode_block(x)) と一致する
-//! （軟判定の dequantize は、確定した bit では硬判定と同じ値になる）。
+//! 送信と受信の対称性: ノイズなしなら、Decoder(Encoder(x)) は原音を量子化誤差の範囲で再現する。欠落は品質コード 2 で報告される。
 
-use gfm_core::codec::{decode_block, encode_block};
-use gfm_core::decoder::Decoder;
+use gfm_core::decoder::{to_float, Decoder};
 use gfm_core::encoder::Encoder;
 use gfm_core::profiles::profile_by_name;
 
@@ -22,20 +20,30 @@ fn signal(n: usize, seed: u64) -> Vec<[i64; 2]> {
         .collect()
 }
 
+fn frames_of(p: &gfm_core::profiles::Profile, x: &[[i64; 2]]) -> Vec<Option<Vec<[f64; 2]>>> {
+    Encoder::new(p, 0, 0).unwrap().run(x).into_iter().map(|f| Some(to_float(&f))).collect()
+}
+
 #[test]
 fn decoder_inverts_encoder() {
-    for name in ["B200M", "B200", "M700M", "M700", "SUB100", "SUB50M", "SUB100-48K"] {
+    // 各プロファイルの量子化だけの SNR の下限（dB、実測より 2 dB 下）。S を送らないプロファイルは、ステレオの原音との SNR が低くなる
+    for (name, min_snr) in [("B200", 47.5), ("M700", 38.0), ("SUB100", 12.5), ("SUB100-48K", 10.5), ("B200M", 1.5), ("M700M", 1.5), ("SUB50M", 1.0)] {
         let p = profile_by_name(name).unwrap();
-        let x = signal(64 * 40, 7);
-        let frames: Vec<_> = Encoder::new(&p, 0, 0).unwrap().run(&x).into_iter().map(Some).collect();
+        let x = signal(64 * 60, 7);
+        let frames = frames_of(&p, &x);
         let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0);
         assert!(out.valid.iter().all(|&v| v), "{}: 欠落が出た", name);
         assert!(out.quality.iter().all(|&q| q == 0 || q == 1), "{}: 品質コード", name);
-        for i in 0..40 {
-            let blk = &x[i * 64..(i + 1) * 64];
-            let want = decode_block(&encode_block(blk, &p, true), &p);
-            assert_eq!(&out.pcm[i * 64..(i + 1) * 64], &want[..], "{}: ブロック {}", name, i);
+        let (mut sig, mut err) = (0f64, 0f64);
+        for (o, r) in out.pcm.iter().zip(&x).skip(128) {
+            for c in 0..2 {
+                let rv = r[c] as f64 / 8388608.0;
+                sig += rv * rv;
+                err += (o[c] - rv) * (o[c] - rv);
+            }
         }
+        let snr = 10.0 * (sig / err).log10();
+        assert!(snr > min_snr, "{}: SNR {:.1} dB が下限 {} dB 未満", name, snr, min_snr);
     }
 }
 
@@ -43,7 +51,7 @@ fn decoder_inverts_encoder() {
 fn lost_frame_is_reported() {
     let p = profile_by_name("B200").unwrap();
     let x = signal(64 * 10, 3);
-    let mut frames: Vec<_> = Encoder::new(&p, 0, 0).unwrap().run(&x).into_iter().map(Some).collect();
+    let mut frames = frames_of(&p, &x);
     frames[4] = None;
     let mut d = Decoder::new(&p).unwrap();
     let out = d.run(&frames, x.len(), 0);

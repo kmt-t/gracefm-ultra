@@ -1,15 +1,11 @@
-//! 量子化: 帯域ごとのブロック浮動小数点（送信 `quantize`）と、その逆（受信 `dequantize`）。GraceFM `gracefm/codec.py` の移植。
-//! 受信の `dequantize` は軟判定: 仮数の各ビットが 1 である確率 p1（Q15）から、係数の期待値と誤差分散を求める。
-//! p1 が 0 か 32768 の確定値なら硬判定の復号と一致する。
+//! 量子化: 帯域ごとのブロック浮動小数点。送信 `quantize` は整数（ビット列の定義。GraceFM `gracefm/codec.py` の移植）、受信 `dequantize` は浮動小数点。
+//! 受信の `dequantize` は浮動小数点の軟判定: 仮数の各ビットが 1 である確率 p1 から、係数の期待値と誤差分散を求める。
 
 use crate::dsp::*;
 use crate::layout::Layout;
 use crate::profiles::{band_level, Profile};
 
 pub const FRAC: i64 = 22;
-/// 誤差分散の「情報なし」（届かない帯域）
-pub const INF_LOG: i64 = 1 << 40;
-const ONE_TWELFTH_Q15: i64 = 2731;
 
 pub fn qmax_of(b: i64) -> i64 {
     (1 << (b - 1)) - 1
@@ -117,111 +113,37 @@ pub fn quantize_block(bands: &[Vec<Vec<i64>>], p: &Profile, clip_opt: bool) -> B
     bd
 }
 
-/// 1 帯域の硬判定の逆量子化
-pub fn dequantize(m: &[i64], eidx: i64, k: usize, b: i64, p: &Profile, ch: usize, attn: &[i64]) -> Vec<i64> {
-    let (emin, _) = exp_range(k, b, p);
-    let s = eidx + emin + FRAC;
-    if attn.is_empty() {
-        return m.iter().map(|&v| saturate(shift_signed(v, s))).collect();
-    }
-    let group = p.attenuator_group(ch, k);
-    m.iter().enumerate().map(|(i, &v)| saturate(shift_signed(v, s - attn[i / group]))).collect()
-}
-
-/// 硬判定: BlockData → 帯域係数。0 bit の帯域は 0
-pub fn dequantize_hard(bd: &BlockData, p: &Profile) -> Vec<Vec<Vec<i64>>> {
+/// 学習データ用: 整数の硬判定の逆量子化（小数 22 bit）。送信側の参照で、通信路なしの量子化結果を作る
+pub fn reconstruct_hard(bd: &BlockData, p: &Profile) -> Vec<Vec<Vec<i64>>> {
     (0..2)
         .map(|ch| {
             (0..p.nbands())
                 .map(|k| {
                     let b = p.bits(ch)[k];
                     if b == 0 {
-                        vec![0; p.ncoef(k)]
-                    } else {
-                        dequantize(bd.mant[ch][k].as_ref().unwrap(), bd.eidx[ch][k].unwrap(), k, b, p, ch, bd.attn[ch][k].as_ref().unwrap())
+                        return vec![0; p.ncoef(k)];
                     }
+                    let (emin, _) = exp_range(k, b, p);
+                    let s = bd.eidx[ch][k].unwrap() + emin + FRAC;
+                    let (m, attn, group) = (bd.mant[ch][k].as_ref().unwrap(), bd.attn[ch][k].as_ref().unwrap(), p.attenuator_group(ch, k));
+                    m.iter().enumerate().map(|(i, &v)| saturate(shift_signed(v, s - if group > 0 { attn[i / group] } else { 0 }))).collect()
                 })
                 .collect()
         })
         .collect()
 }
 
-/// 誤差分散（対数領域）: [半ブロック][成分][帯域]
-pub type Rb = [[i64; 5]; 2];
+/// 誤差分散（線形、満点 1.0 に対する二乗）: [成分][帯域]。情報なしは f64::INFINITY
+pub type Rb = [[f64; 5]; 2];
 
 pub struct Estimate {
-    pub coef: Vec<Vec<Vec<i64>>>,
-    pub rb: [Rb; 2],
-}
-
-/// 受信: 軟判定の逆量子化。hard な仮数 bd に、非保護ビットの事後確率 p1（coef_items の並び、Q15）を反映する。
-///   期待値   E[u] = 硬判定の u + Σ (p1 - 硬判定ビット)·2^pos
-///   事後分散 Σ p1 (1 - p1)·4^pos
-/// 高域の CRC が合わないとき（high_ok = false）は、高域を 0（情報なし）にする。
-pub fn dequantize_soft(bd: &BlockData, lay: &Layout, p1: &[i64], high_ok: bool) -> Estimate {
-    let p = &lay.p;
-    let nb = p.nbands();
-    let mut du = vec![0i64; lay.n_coef];
-    let mut var = vec![0i64; lay.n_coef];
-    for (j, &cf) in lay.coef_flat.iter().enumerate() {
-        let hard = (p1[j] > 16384) as i64;
-        let w = 1i64 << lay.coef_pos[j];
-        du[cf] += (p1[j] - hard * 32768) * w;
-        var[cf] += ((p1[j] * (32768 - p1[j])) >> 15) * w * w;
-    }
-    let mut coef = vec![vec![Vec::new(); nb]; 2];
-    let mut rb = [[[INF_LOG; 5]; 2]; 2];
-    for ch in 0..2 {
-        for k in 0..nb {
-            let b = p.bits(ch)[k];
-            let n = p.ncoef(k);
-            if b == 0 || (k >= p.high_k() && !high_ok) {
-                coef[ch][k] = vec![0; n];
-                continue;
-            }
-            let o = lay.coef_offset[&(ch, k)];
-            let (qmax, qmin) = (qmax_of(b), qmin_of(b));
-            let mant = bd.mant[ch][k].as_ref().unwrap();
-            let attn = bd.attn[ch][k].as_ref().unwrap();
-            let group = p.attenuator_group(ch, k);
-            let base = bd.eidx[ch][k].unwrap() + exp_range(k, b, p).0 + FRAC;
-            let mut c = Vec::with_capacity(n);
-            let mut rv = Vec::with_capacity(n);
-            for j in 0..n {
-                let m_q15 = ((mant[j] << 15) + du[o + j]).clamp(qmin << 15, qmax << 15);
-                let a = if group > 0 { attn[j / group] } else { 0 };
-                c.push(saturate(shift_signed(m_q15, base - a - 15)));
-                rv.push((var[o + j] + ONE_TWELFTH_Q15) >> (2 * a));
-            }
-            let exp_two = 2 * base - 15;
-            let halves = if n >= 2 {
-                let h = (n / 2) as i64;
-                [rv[..n / 2].iter().sum::<i64>() / h, rv[n / 2..].iter().sum::<i64>() / h]
-            } else {
-                [rv[0], rv[0]]
-            };
-            for hh in 0..2 {
-                rb[hh][ch][k] = log2_q8(halves[hh].max(1)) + (exp_two << 8);
-            }
-            coef[ch][k] = c;
-        }
-    }
-    Estimate { coef, rb }
-}
-
-// ---------------------------------------------------------------- 浮動小数点の軟判定（Ultra の本番経路）
-
-/// 誤差分散（線形、満点 1.0 に対する二乗）: [半ブロック][成分][帯域]。情報なしは f64::INFINITY
-pub type RbF = [[f64; 5]; 2];
-
-pub struct EstimateF {
     pub coef: Vec<Vec<Vec<f64>>>,
-    pub rb: [RbF; 2],
+    pub rb: [Rb; 2],
 }
 
 /// 受信（浮動小数点）: 仮数の各ビットが 1 である確率 p1（0〜1、coef_items の並び）から、係数の期待値と誤差分散を求める。
 /// 係数は満点 ±1 の尺度。p1 は厳密な sigmoid でよく、整数版のような Q15 の丸めはない。
-pub fn dequantize_soft_f(bd: &BlockData, lay: &Layout, p1: &[f64], high_ok: bool) -> EstimateF {
+pub fn dequantize(bd: &BlockData, lay: &Layout, p1: &[f64], high_ok: bool) -> Estimate {
     let p = &lay.p;
     let nb = p.nbands();
     let mut du = vec![0f64; lay.n_coef];
@@ -270,5 +192,5 @@ pub fn dequantize_soft_f(bd: &BlockData, lay: &Layout, p1: &[f64], high_ok: bool
             coef[ch][k] = c;
         }
     }
-    EstimateF { coef, rb }
+    Estimate { coef, rb }
 }

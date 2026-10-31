@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from materials import load  # noqa: E402
-from gracefm_ultra.rx import GRACEFM  # noqa: E402,F401
+from gracefm_ultra.gfm import GRACEFM  # noqa: E402,F401
 from gracefm.decoder import roundtrip  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402

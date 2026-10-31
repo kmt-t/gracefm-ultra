@@ -1,4 +1,4 @@
-//! 誤り検出と系統符号のパリティ（GraceFM `gracefm/fec.py` の送信側の移植）。
+//! 誤り検出、系統符号のパリティ（送信）、軟判定ビタビ（受信、浮動小数点）。GraceFM `gracefm/fec.py` の移植。
 //! 畳み込み符号: 拘束長 7、符号化率 1/2、生成多項式 133, 171（8 進）。
 
 pub const K: usize = 7;
@@ -50,10 +50,9 @@ pub fn rsc_parity(x: &[u8]) -> (Vec<u8>, Vec<u8>) {
     (c1, c0[n..].to_vec())
 }
 
-// ---------------------------------------------------------------- 整数のビタビ復号
+// ---------------------------------------------------------------- 復号（ビタビ）
 const NSTATE: usize = 1 << (K - 1);
 const G: [u32; 2] = [0o133, 0o171];
-pub const PM_MIN: i64 = -(1 << 13);
 
 /// 情報ビット列を (133, 171) で符号化する（6 ビットの 0 で終端）。符号化ビットの順序は c0[0], c1[0], c0[1], ...
 pub fn conv_encode(bits: &[u8]) -> Vec<u8> {
@@ -102,63 +101,8 @@ fn trellis() -> Trellis {
     t
 }
 
-/// soft: 長さ 2*(nbits+6) の整数の軟値 → 復号ビット（nbits）
-pub fn viterbi_decode(soft: &[i64], nbits: usize) -> Vec<u8> {
-    let tr = trellis();
-    let l = nbits + K - 1;
-    let mut pm = [PM_MIN; NSTATE];
-    pm[0] = 0;
-    let mut choice = vec![[0u8; NSTATE]; l];
-    for t in 0..l {
-        let (r0, r1) = (soft[2 * t], soft[2 * t + 1]);
-        let bm = [r0 + r1, r0 - r1, -r0 + r1, -r0 - r1];
-        let mut np = [0i64; NSTATE];
-        for ns in 0..NSTATE {
-            let m0 = pm[tr.p0[ns]] + bm[tr.b0[ns]];
-            let m1 = pm[tr.p1[ns]] + bm[tr.b1[ns]];
-            choice[t][ns] = (m1 > m0) as u8;
-            np[ns] = m0.max(m1);
-        }
-        if t >= nbits {
-            for ns in 0..NSTATE {
-                if tr.forced[ns] {
-                    np[ns] = PM_MIN;
-                }
-            }
-        }
-        let mx = *np.iter().max().unwrap();
-        for ns in 0..NSTATE {
-            pm[ns] = (np[ns] - mx).max(PM_MIN);
-        }
-    }
-    let mut s = 0usize;
-    let mut bits = vec![0u8; l];
-    for t in (0..l).rev() {
-        bits[t] = (s >> (K - 2)) as u8;
-        s = ((s << 1) & (NSTATE - 1)) | choice[t][s] as usize;
-    }
-    bits.truncate(nbits);
-    bits
-}
-
-/// x_soft（n）、parity_soft（n+6）、tail_soft（6）: 整数の軟値（正 = 0 らしい）→ 訂正後の情報ビット（n）
-pub fn rsc_decode(x_soft: &[i64], parity_soft: &[i64], tail_soft: &[i64]) -> Vec<u8> {
-    let n = x_soft.len();
-    let mut r = vec![0i64; 2 * (n + K - 1)];
-    for (i, &v) in x_soft.iter().chain(tail_soft).enumerate() {
-        r[2 * i] = v;
-    }
-    for (i, &v) in parity_soft.iter().enumerate() {
-        r[2 * i + 1] = v;
-    }
-    let u = viterbi_decode(&r, n);
-    let c = conv_encode(&u);
-    (0..n).map(|i| c[2 * i]).collect()
-}
-
-// ---------------------------------------------------------------- 浮動小数点のビタビ（Ultra の本番経路）
 /// soft: 長さ 2*(nbits+6) の軟値（正 = 0 らしい、自然対数の LLR）→ 復号ビット（nbits）。経路メトリックは浮動小数点で、正規化だけ行う（飽和なし）
-pub fn viterbi_decode_f(soft: &[f64], nbits: usize) -> Vec<u8> {
+pub fn viterbi_decode(soft: &[f64], nbits: usize) -> Vec<u8> {
     let tr = trellis();
     let l = nbits + K - 1;
     let neg = -1e30f64;
@@ -197,7 +141,7 @@ pub fn viterbi_decode_f(soft: &[f64], nbits: usize) -> Vec<u8> {
     bits
 }
 
-pub fn rsc_decode_f(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64]) -> Vec<u8> {
+pub fn rsc_decode(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64]) -> Vec<u8> {
     let n = x_soft.len();
     let mut r = vec![0f64; 2 * (n + K - 1)];
     for (i, &v) in x_soft.iter().chain(tail_soft).enumerate() {
@@ -206,7 +150,7 @@ pub fn rsc_decode_f(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64]) -> V
     for (i, &v) in parity_soft.iter().enumerate() {
         r[2 * i + 1] = v;
     }
-    let u = viterbi_decode_f(&r, n);
+    let u = viterbi_decode(&r, n);
     let c = conv_encode(&u);
     (0..n).map(|i| c[2 * i]).collect()
 }

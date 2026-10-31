@@ -1,11 +1,10 @@
-//! GraceFM の送信側（符号化・フレーム化・変調）と受信側（デコーダ）、学習データ生成用の通信路。仕様は ../gracefm の Python 実装に合わせる。
+//! GraceFM の送信（符号化・フレーム化・変調、整数）と、Ultra の受信（復調・復号・出力段、浮動小数点）。送信の仕様は ../gracefm の Python 実装に合わせる。
 pub mod codec;
 pub mod decoder;
-pub mod encoder;
 pub mod dsp;
+pub mod encoder;
 pub mod fec;
 pub mod framing;
-pub mod float_rx;
 pub mod fusion;
 pub mod gen;
 pub mod iir;
@@ -16,4 +15,3 @@ pub mod plc;
 pub mod profiles;
 pub mod receiver;
 pub mod scrambler;
-pub mod tables;
