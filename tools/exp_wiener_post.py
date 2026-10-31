@@ -39,24 +39,37 @@ MATERIALS = {
     "percussion": ("lossless/Ceramic_Djembe.wav", 1.0),
     "guitar": ("lossless/344211_giomilko_c-major-9-bossa-nova-guitar.wav", 1.0),
     "speech": ("libri1.ogg", 0.3),
+    "demo": ("@demo", 0.0),
+    "ambient": ("train_lossless/Raspberrymusic_-_Ambient_(10_minutes).flac", 60.0),
 }
+FOUR = ["piano", "percussion", "guitar", "speech"]
 
 
 def load(name, seconds):
     rel, start = MATERIALS[name]
     path = os.path.join(GRACEFM, "eval_audio", rel)
-    if path.endswith(".ogg"):
+    if rel == "@demo":                                              # GraceFM の合成試験信号 (48 kHz)
+        from tools.common.demo_signal import make_demo
+        x = make_demo(fs=48000, dur=10.0)
+        x = np.stack(x, axis=1) if isinstance(x, tuple) else x
+        fs = 48000
+        x = wavio.resample(x, fs, FS)
+        return x[int(start * FS):int((start + seconds) * FS)] * 0.5
+    if path.endswith(".ogg") or path.endswith(".flac"):
         import soundfile as sf
-        x, fs = sf.read(path, dtype="float64", always_2d=True)
+        info = sf.info(path)
+        first = int(start * info.samplerate) if rel.startswith("train_lossless") else 0              # 長い曲は途中から使う
+        x, fs = sf.read(path, dtype="float64", always_2d=True, start=first, frames=int((seconds + 2) * info.samplerate))
         x = x[:, :2] if x.shape[1] > 1 else np.repeat(x, 2, axis=1)
     else:
         x, fs = wavio.read(path)
     x = wavio.resample(x, fs, FS)
-    return x[int(start * FS):int((start + seconds) * FS)] * 0.5
+    a0 = 0 if rel.startswith("train_lossless") else int(start * FS)
+    return x[a0:a0 + int(seconds * FS)] * 0.5
 
 
 def job(args):
-    name, esn0, seed, seconds = args
+    name, esn0, seed, seconds, wiener = args
     os.sched_setaffinity(0, CPUS)
     from visqol import VisqolApi
     api = VisqolApi()
@@ -92,8 +105,14 @@ def job(args):
         h = firwin(NTAPS, fc / (FS / 2), window=("kaiser", 8))
         z = lfilter(h, 1.0, np.concatenate([y0 / sc, np.zeros(NTAPS)]))
         outs[f"fir{fc // 1000}k"] = z[(NTAPS - 1) // 2:(NTAPS - 1) // 2 + len(y0)]        # 遅延を補償
-    outs["wiener"] = wiener_postfilter(y0, var)[0] / sc
-    res = {"name": name, "esn0": esn0, "seed": seed, "bad": bad}
+    for spec in wiener:
+        al, fl = (float(v) for v in spec.split(":"))
+        outs["wiener" if spec == "1:0.03" else f"w{al:g}/{fl:g}"] = wiener_postfilter(y0, var, floor=fl, alpha=al)[0] / sc
+    valid = np.repeat(var[:, 0] < 1e29, 64)[:n]                                     # 受信できたブロックの係数 (M の 1 成分)
+    nbv = len(valid) // 64
+    pred = float(np.where(var[:nbv] < 1e29, var[:nbv], 0).sum())                   # 予測した誤差エネルギー (係数領域 = 時間領域)
+    actual = float(np.sum(((y0[:n] - ref[:n] * sc) ** 2)[valid]))
+    res = {"name": name, "esn0": esn0, "seed": seed, "bad": bad, "calib": actual / max(pred, 1e-30)}
     lo, hi = 1024, n - 1024
     r48 = wavio.resample(ref[lo:hi], FS, 48000)
     for k, z in outs.items():
@@ -115,25 +134,34 @@ def main():
     ap.add_argument("--esn0", default="8,12,20,35")
     ap.add_argument("--seeds", type=int, default=2)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--wiener", default="1:0.03", help="alpha:floor をカンマ区切りで (掃引用)")
+    ap.add_argument("--materials", default=",".join(FOUR), help="カンマ区切り")
+    ap.add_argument("--merge", default="", help="カンマ区切りの JSON を結合して表だけ出す (実験は走らせない)")
     ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "exp_wiener_post.json"))
     a = ap.parse_args()
     os.sched_setaffinity(0, CPUS)
-    jobs = [(m, float(e), s, a.seconds) for e in a.esn0.split(",") for m in MATERIALS for s in range(a.seeds)]
-    with Pool(a.workers) as pool:
-        rows = []
-        for r in pool.imap_unordered(job, jobs):
-            rows.append(r)
-            print(f"{r['name']:10} Es/N0 {r['esn0']:4.0f} seed {r['seed']} CRC失敗 {r['bad']}", flush=True)
-    json.dump(rows, open(a.out, "w"))
-    keys = ["raw"] + [f"fir{c // 1000}k" for c in CUTS] + ["wiener"]
-    print(f"\n{len(MATERIALS)} 素材 × {a.seeds} シード。SNR [dB] / ViSQOL の平均 (FIR は 129 タップ、遅延 {(NTAPS - 1) // 2} サンプル = {(NTAPS - 1) // 2 / FS * 1000:.1f} ms を補償して評価)")
+    if a.merge:
+        rows = [r for f in a.merge.split(",") for r in json.load(open(f))]
+    else:
+        mats = a.materials.split(",")
+        jobs = [(m, float(e), s_, a.seconds, a.wiener.split(",")) for e in a.esn0.split(",") for m in mats for s_ in range(a.seeds)]
+        with Pool(a.workers) as pool:
+            rows = []
+            for r in pool.imap_unordered(job, jobs):
+                rows.append(r)
+                print(f"{r['name']:10} Es/N0 {r['esn0']:4.0f} seed {r['seed']} CRC失敗 {r['bad']}", flush=True)
+        json.dump(rows, open(a.out, "w"))
+    names = list(dict.fromkeys(r["name"] for r in rows))
+    keys = [k for k in rows[0] if k not in ("name", "esn0", "seed", "bad", "calib")]
+    print(f"事後分散の較正: 実際の誤差エネルギー / 予測 (1 が理想) = {np.exp(np.mean(np.log([max(r['calib'], 1e-9) for r in rows]))):.2f} (幾何平均)")
+    print(f"\n{len(names)} 素材 ({', '.join(names)}) × {len({(r['name'], r['seed']) for r in rows}) // len(names)} シード。SNR [dB] / ViSQOL の平均 (FIR は 129 タップ、遅延 {(NTAPS - 1) // 2} サンプル = {(NTAPS - 1) // 2 / FS * 1000:.1f} ms を補償して評価)")
     print(f"{'Es/N0':>6}" + "".join(f"{k:>15}" for k in keys))
     for e in sorted({r["esn0"] for r in rows}):
         sel = [r for r in rows if r["esn0"] == e]
         print(f"{e:6.0f}" + "".join(f"{np.mean([r[k][0] for r in sel]):7.2f}/{np.mean([r[k][1] for r in sel]):6.3f} " for k in keys))
     print("\n素材別 (Es/N0 = 最大のクリーン受信と 12 dB)")
     for e in (max(r["esn0"] for r in rows), 12.0):
-        for m in MATERIALS:
+        for m in names:
             sel = [r for r in rows if r["esn0"] == e and r["name"] == m]
             if sel:
                 print(f"{m:10}{e:4.0f}" + "".join(f"{np.mean([r[k][0] for r in sel]):7.2f}/{np.mean([r[k][1] for r in sel]):6.3f} " for k in keys))

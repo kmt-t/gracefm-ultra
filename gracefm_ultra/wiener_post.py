@@ -32,10 +32,14 @@ def basis_table():
 
 
 def wiener_postfilter(y, var, floor=0.03, alpha=1.0):
-    """y: (n,) 逆 Haar の出力、var: (n/64, 64) 係数の事後分散 (使えない係数は大きな値)。返り値: (処理後の y, 平均利得)"""
+    """y: (n,) 逆 Haar の出力、var: (n/64, 64) 係数の事後分散。返り値: (処理後の y, 平均利得)
+    var が 1e29 以上のブロック (CRC 失敗・欠落。y は 0) は「情報なし」で、ノイズではないので、ノイズの計算では 0 にする
+    (大きな値のまま足すと、同じ窓の正常なブロックまで利得が下限になる)。
+    alpha: 雑音の見積もりへの係数 (>1 で強く抑える)、floor: 利得の下限"""
     T = basis_table()
     nb = len(y) // BLOCK
-    var = np.minimum(np.asarray(var, float)[:nb], 1e30)
+    var = np.asarray(var, float)[:nb]
+    var = np.where(var >= 1e29, 0.0, var)
     out = np.zeros(len(y) + NFFT)
     norm = np.zeros(len(y) + NFFT)
     gains = []
