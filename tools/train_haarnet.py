@@ -32,14 +32,19 @@ def load(split, profile="B200M"):
     return out
 
 
-def batch(data, bs, rng):
+def batch(data, bs, rng, min_esn0=-1e9):
     L, S_, V, LO, ST, T = [], [], [], [], [], []
     while len(L) < bs:
         d = data[rng.integers(len(data))]
         s = int(rng.integers(d["llr"].shape[0]))
+        if d["scen"][s][0] < min_esn0:                      # ファインチューニング用: 基準 Es/N0 の下限
+            continue
         t0 = int(rng.integers(0, d["llr"].shape[1] - WIN))
         lost = d["lost"][s, t0:t0 + WIN]
         if lost.mean() > 0.5:
+            continue
+        tr, st = d["coef0"][t0:t0 + WIN], d["step"][t0:t0 + WIN]
+        if np.mean(tr[:, :4] ** 2) < 100 * np.mean(st[:, :4] ** 2):          # ほぼ無音の窓は除く (量子化の刻みに近い)
             continue
         L.append(d["llr"][s, t0:t0 + WIN].astype(np.float32)); V.append(d["var"][s, t0:t0 + WIN].astype(np.float32))
         LO.append(lost); ST.append(d["step"][t0:t0 + WIN]); T.append(d["coef0"][t0:t0 + WIN])
@@ -55,7 +60,8 @@ def loss_fn(net, meta, llr, step, var, lost, truth, edge=4):
     keep[:, :edge] = 0
     keep[:, -edge:] = 0
     err = (((est - t) ** 2) * keep).sum((1, 2))
-    ref = ((t ** 2) * keep).sum((1, 2)).clamp_min(1e-6)
+    nvalid = keep[..., 0].sum(1)
+    ref = ((t ** 2) * keep).sum((1, 2)) + 0.05 * 4 * nvalid + 1e-6        # 下限: 観測レベルの -13 dB (E0 の帯域0は rms=1)
     err0 = (((e0n - t) ** 2) * keep).sum((1, 2))
     return (err / ref).mean(), (err0 / ref).mean()
 
@@ -66,6 +72,8 @@ def main():
     ap.add_argument("--bs", type=int, default=64)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", default=os.path.join(HERE, "..", "runs", "hn.pt"))
+    ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
+    ap.add_argument("--min-esn0", type=float, default=-1e9, help="この Es/N0 [dB] 以上のシナリオだけで学習する")
     a = ap.parse_args()
     os.sched_setaffinity(0, CPUS)
     torch.set_num_threads(len(CPUS))
@@ -75,6 +83,9 @@ def main():
     cfg = dict(ch=128, blocks=8)
     net = HaarNetLite(**cfg)
     print(f"学習 {len(data)} 音源、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
+    if a.resume:
+        net.load_state_dict(torch.load(a.resume, map_location="cpu")["model"])
+        print(f"{a.resume} から再開 (Es/N0 >= {a.min_esn0})", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     t0, step, run, run0 = time.time(), 0, [], []
     total = a.minutes * 60
@@ -82,7 +93,7 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss, base = loss_fn(net, meta, *batch(data, a.bs, rng))
+        loss, base = loss_fn(net, meta, *batch(data, a.bs, rng, a.min_esn0))
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
