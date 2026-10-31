@@ -13,6 +13,7 @@ pub mod modem;
 pub mod npz;
 pub mod pcm;
 pub mod plc;
+pub mod prior;
 pub mod profiles;
 pub mod receiver;
 pub mod scrambler;

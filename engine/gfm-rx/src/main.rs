@@ -1,8 +1,10 @@
 //! 受信（デコーダ、浮動小数点）。使い方:
-//!   gfm-rx --profile B200 [--profile-b SUB100] --frames-a a.sym [--frames-b b.sym] --n N [--offset-b K] --out out.raw [--quality q.txt]
+//!   gfm-rx --profile B200 [--profile-b SUB100] --frames-a a.sym [--frames-b b.sym] --n N [--offset-b K] [--prior none|temporal|full] --out out.raw [--quality q.txt]
+//! --prior: ヘッダの事前知識（既定 full）。none: 通信路の軟値だけ。temporal: フレーム番号と直前の指数。full: さらに副系のピークからの指数
 //! フレームファイル (.sym): u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 //! out.raw: L/R の交互の f32（満点 ±1）。
 
+use gfm_core::prior::PriorConfig;
 use gfm_core::profiles::profile_by_name;
 use gfm_core::receiver::receive;
 
@@ -35,6 +37,7 @@ fn main() {
     let (mut profile, mut profile_b, mut fa, mut fb, mut out, mut qpath) =
         (String::new(), String::new(), String::new(), String::new(), String::new(), String::new());
     let (mut n, mut offset_b) = (0usize, 0usize);
+    let mut cfg = PriorConfig::FULL;
     let mut i = 1;
     while i < args.len() {
         let next = args.get(i + 1).cloned().unwrap_or_else(|| panic!("{} に値がありません", args[i]));
@@ -47,6 +50,14 @@ fn main() {
             "--quality" => qpath = next,
             "--n" => n = next.parse().unwrap(),
             "--offset-b" => offset_b = next.parse().unwrap(),
+            "--prior" => {
+                cfg = match next.as_str() {
+                    "none" => PriorConfig::NONE,
+                    "temporal" => PriorConfig::TEMPORAL,
+                    "full" => PriorConfig::FULL,
+                    v => panic!("--prior は none / temporal / full: {}", v),
+                }
+            }
             a => panic!("不明な引数: {}", a),
         }
         i += 2;
@@ -60,7 +71,7 @@ fn main() {
     let frames_a = read_sym(&fa);
     let frames_b = if fb.is_empty() { None } else { Some(read_sym(&fb)) };
     let t0 = std::time::Instant::now();
-    let r = receive(&p, &frames_a, frames_b.as_deref(), n, offset_b, pb.as_ref()).unwrap_or_else(|e| panic!("{}", e));
+    let r = receive(&p, &frames_a, frames_b.as_deref(), n, offset_b, pb.as_ref(), &cfg).unwrap_or_else(|e| panic!("{}", e));
     let mut raw = Vec::with_capacity(r.pcm.len() * 8);
     for s in &r.pcm {
         raw.extend((s[0] as f32).to_le_bytes());

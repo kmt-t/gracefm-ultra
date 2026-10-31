@@ -67,25 +67,49 @@ pub struct Unpacked {
     pub bd: BlockData,
     pub high_ok: bool,
     pub top_bits: Vec<u8>,
+    /// ヘッダのフレーム番号（16 bit）
+    pub counter: u64,
 }
 
 fn val(bits: &[u8]) -> u64 {
     bits.iter().fold(0u64, |a, &b| (a << 1) | b as u64)
 }
 
-/// pack の逆。soft: 送信ビット列全体の軟値（自然対数の LLR、正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None。純粋な関数
-pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<Unpacked> {
+/// unpack に渡す事前の軟値（正 = 0 らしい）。ビタビ復号の情報ビット側に足す
+#[derive(Clone, Copy, Default)]
+pub struct UnpackPrior<'a> {
+    /// ヘッダの情報ビット（n_hdata 個）
+    pub header: Option<&'a [f64]>,
+    /// 保護された仮数の上位ビット（n_top 個、Layout の top_coef_idx の並び）
+    pub top: Option<&'a [f64]>,
+}
+
+/// pack の逆。soft: 送信ビット列全体の軟値（自然対数の LLR、正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None。純粋な関数。
+/// prior: 事前の軟値。`UnpackPrior::default()` なら通信路の軟値だけ
+pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], prior: &UnpackPrior) -> Option<Unpacked> {
     use crate::codec::{offset_of, qmax_of, qmin_of};
     let p = &lay.p;
     let pick = |idx: &[usize]| -> Vec<f64> { idx.iter().map(|&i| soft[i]).collect() };
-    let prot = fec::rsc_decode(&pick(&lay.hdata_idx), &pick(&lay.hpar_idx), &pick(&lay.htail_idx));
+    let mut header_soft = pick(&lay.hdata_idx);
+    if let Some(pr) = prior.header {
+        for (x, p) in header_soft.iter_mut().zip(pr) {
+            *x += p;
+        }
+    }
+    let prot = fec::rsc_decode(&header_soft, &pick(&lay.hpar_idx), &pick(&lay.htail_idx));
     let body = &prot[..lay.n_prot];
     let top: Vec<u8> = if lay.n_top > 0 {
         let t6 = fec::K - 1;
         let top_stream: Vec<usize> = lay.top_coef_idx.iter().map(|&i| lay.coef_stream_idx[i]).collect();
         let mut par = pick(&lay.parity_idx);
         par.extend(pick(&lay.tail_idx[..t6]));
-        fec::rsc_decode(&pick(&top_stream), &par, &pick(&lay.tail_idx[t6..]))
+        let mut top_soft = pick(&top_stream);
+        if let Some(pr) = prior.top {
+            for (x, p) in top_soft.iter_mut().zip(pr) {
+                *x += p;
+            }
+        }
+        fec::rsc_decode(&top_soft, &par, &pick(&lay.tail_idx[t6..]))
     } else {
         Vec::new()
     };
@@ -129,7 +153,7 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<Unpacked> {
         let b = p.bits(ch)[k];
         mant[ch][k] = Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b)).clamp(qmin_of(b), qmax_of(b))).collect());
     }
-    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, top_bits: top })
+    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, top_bits: top, counter: val(&hdr[8..lay.header_bits]) })
 }
 
 pub const RECOVER_CANDIDATES: usize = 7;
@@ -137,8 +161,8 @@ pub const RECOVER_MAX_FLIPS: usize = 2;
 
 /// 基本 CRC が合わないとき、ヘッダの信頼度の低い bit を 1〜RECOVER_MAX_FLIPS 個反転して CRC が合う候補を探す（Chase 型）。
 /// 返り値の 2 つ目は反転した個数
-pub fn unpack_recovering(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<(Unpacked, usize)> {
-    if let Some(r) = unpack(lay, soft, bits) {
+pub fn unpack_recovering(lay: &Layout, soft: &[f64], bits: &[u8], prior: &UnpackPrior) -> Option<(Unpacked, usize)> {
+    if let Some(r) = unpack(lay, soft, bits, prior) {
         return Some((r, 0));
     }
     let mut hdr_idx: Vec<usize> = lay.hdata_idx.clone();
@@ -156,7 +180,7 @@ pub fn unpack_recovering(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<(Unp
                 s2[idx] = -s2[idx];
                 b2[idx] ^= 1;
             }
-            if let Some(r) = unpack(lay, &s2, &b2) {
+            if let Some(r) = unpack(lay, &s2, &b2, prior) {
                 return Some((r, t));
             }
             // 次の組み合わせ（辞書順）

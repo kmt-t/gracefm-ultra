@@ -2,6 +2,7 @@
 
 use gfm_core::decoder::Decoder;
 use gfm_core::encoder::Encoder;
+use gfm_core::prior::PriorConfig;
 use gfm_core::profiles::profile_by_name;
 
 fn signal(n: usize, seed: u64) -> Vec<[f64; 2]> {
@@ -34,7 +35,7 @@ fn decoder_inverts_encoder() {
         let p = profile_by_name(name).unwrap();
         let x = signal(64 * 60, 7);
         let frames = frames_of(&p, &x);
-        let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0);
+        let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0, &PriorConfig::FULL, None);
         assert!(out.valid.iter().all(|&v| v), "{}: 欠落が出た", name);
         assert!(out.quality.iter().all(|&q| q == 0 || q == 1), "{}: 品質コード", name);
         let (mut sig, mut err) = (0f64, 0f64);
@@ -56,7 +57,7 @@ fn lost_frame_is_reported() {
     let x = signal(64 * 10, 3);
     let mut frames = frames_of(&p, &x);
     frames[4] = None;
-    let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0);
+    let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0, &PriorConfig::FULL, None);
     assert_eq!(out.quality[4], 2);
     assert!(!out.valid[4 * 64] && out.valid[3 * 64]);
     assert_eq!(out.stats.lost, 1);

@@ -5,6 +5,7 @@ use crate::decoder::{Decoder, Rb, Stats, QUALITY_MISSING};
 use crate::fusion::fuse_band;
 use crate::iir::apply_alt;
 use crate::plc::{conceal, crossfade_switch, PlcParams};
+use crate::prior::{Peaks, PriorConfig};
 use crate::profiles::{Profile, MAX_BANDS};
 
 pub struct RxOutput {
@@ -63,16 +64,24 @@ pub fn receive(
     n: usize,
     offset_b: usize,
     profile_b: Option<&Profile>,
+    cfg: &PriorConfig,
 ) -> Result<RxOutput, String> {
     let pb = profile_b.unwrap_or(profile);
     if pb.fs != profile.fs || pb.block != profile.block {
         return Err("副系のサンプリング周波数とブロック長は主系と同じにしてください".into());
     }
-    let a = Decoder::new(profile)?.run(frames_a, n, 0);
+    // 副系を先に復号して、主系のヘッダの指数の予測（副系のピーク）を作る。副系のブロックの格子は主系と同じ（offset_b がブロック長の倍数）のときだけ使える
     let b = match frames_b {
-        Some(fb) => Some(Decoder::new(pb)?.run(fb, n, offset_b)),
+        Some(fb) => Some(Decoder::new(pb)?.run(fb, n, offset_b, cfg, None)),
         None => None,
     };
+    let hints: Option<Vec<Option<Peaks>>> = match &b {
+        Some(b) if cfg.sub && offset_b.is_multiple_of(profile.block) => {
+            Some((0..frames_a.len()).map(|i| b.peaks.get(i + offset_b / profile.block).copied().flatten()).collect())
+        }
+        _ => None,
+    };
+    let a = Decoder::new(profile)?.run(frames_a, n, 0, cfg, hints.as_deref());
     let (y, v) = match &b {
         None => (a.pcm.clone(), a.valid.clone()),
         Some(b) => fuse_band(&a, b, profile.block, profile.levels),

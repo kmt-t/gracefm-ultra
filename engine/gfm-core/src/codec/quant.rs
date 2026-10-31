@@ -55,6 +55,13 @@ fn shared_exponent(peak: f64, qmax: i64, emin: i64, emax: i64) -> i64 {
     e.clamp(emin, emax)
 }
 
+/// 帯域 (k, 仮数幅 b) の係数のピーク（絶対値の最大）から、`quantize_band` が選ぶ指数インデックス（クリップ最適化なし）。
+/// 副系の復号係数から、主系のヘッダの指数を予測するのに使う
+pub fn exponent_for_peak(peak: f64, k: usize, b: i64, p: &Profile) -> i64 {
+    let (emin, emax) = exp_range(k, b, p);
+    shared_exponent(peak, qmax_of(b), emin.max(1 - FRAC), emax) - emin
+}
+
 /// 1 帯域の係数 c → (仮数 m, 指数インデックス, アッテネータ)。アッテネータの区間は profile.attenuator_group で決まる。
 /// clip_opt: 指数を 1 つ小さくして（飽和を許して）誤差が減るなら、そちらを採る
 pub fn quantize_band(c: &[f64], ch: usize, k: usize, p: &Profile, clip_opt: bool) -> (Vec<i64>, i64, Vec<i64>) {
