@@ -43,7 +43,7 @@ def scenarios(rng, n):
     """多様な通信路のリスト [(基準Es/N0, フェージング, 欠落率, 平均バースト長)]"""
     out = []
     for i in range(n):
-        esn0 = float(rng.uniform(0, 16))
+        esn0 = float(rng.uniform(0, 16)) if rng.random() < 0.5 else float(rng.uniform(16, 40))      # 高 C/N (同軸直結など) も厚く
         fade = int(rng.random() < 0.5)
         rate = 0.0 if rng.random() < 0.5 else float(rng.choice([0.02, 0.05, 0.1, 0.2, 0.3]))
         burst = float(rng.choice([1, 3, 8, 25]))

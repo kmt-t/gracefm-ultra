@@ -19,7 +19,7 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta  # noqa: E402
+from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
@@ -52,7 +52,41 @@ def batch(data, bs, rng, min_esn0=-1e9):
     return f(L), f(ST), f(V), f(LO), f(T)
 
 
-def loss_fn(net, meta, llr, step, var, lost, truth, edge=4):
+_HM = {}
+
+
+def _waveform(coef, ch_of_coef, nblock=64):
+    """coef: (B, T, ncoef) 係数 → 各成分 (M, S) の時間波形 (B, nch, T*64)。係数の並びは M の 64 → S の 64 (ない成分は無視)"""
+    key = coef.device
+    if key not in _HM:
+        _HM[key] = torch.from_numpy(haar_matrix()).float().to(key)
+    outs = []
+    for c0 in range(0, coef.shape[-1], 64):
+        x = coef[..., c0:c0 + 64] @ _HM[key]                                      # (B, T, 64)
+        outs.append(x.reshape(x.shape[0], -1))
+    return torch.stack(outs, 1)
+
+
+def spectral_loss(est, t, S, keep, nfft=512, hop=128, fmin_bin=32):
+    """再構成波形の対数振幅 (2 kHz 以上 = 512 点 FFT で 32 ビン以上) の L1。漏れ雑音 (高域の広帯域雑音) を直接抑える。
+    est, t: 正規化した係数 (B, T, ncoef)、S: (B, 1, ncoef) 尺度、keep: (B, T, 1)"""
+    w = _waveform(est * S, None) / S.mean()
+    r = _waveform(t * S, None) / S.mean()
+    B, C, N = w.shape
+    win = torch.hann_window(nfft, device=w.device)
+    Xw = torch.stft(w.reshape(B * C, N), nfft, hop, window=win, return_complex=True).abs()
+    Xr = torch.stft(r.reshape(B * C, N), nfft, hop, window=win, return_complex=True).abs()
+    lo = torch.log(Xw[:, fmin_bin:] + 1e-3)
+    ro = torch.log(Xr[:, fmin_bin:] + 1e-3)
+    nf = Xw.shape[-1]
+    fr = torch.arange(nf, device=w.device) * hop + nfft // 2                       # 各 STFT フレームの中心サンプル
+    kf = keep[..., 0].repeat_interleave(64, dim=1)[:, :N]                         # (B, N) サンプル単位の有効
+    kf = kf.repeat_interleave(C, dim=0)
+    use = kf[:, fr.clamp(max=N - 1)]                                              # (B*C, nf)
+    return ((lo - ro).abs().mean(1) * use).sum() / use.sum().clamp_min(1.0)
+
+
+def loss_fn(net, meta, llr, step, var, lost, truth, edge=4, lam_spec=0.05, lam_harm=0.5):
     x, S, e0n = features(llr, step, var, lost, meta)
     est = e0n + net(x)
     t = truth / S
@@ -61,10 +95,21 @@ def loss_fn(net, meta, llr, step, var, lost, truth, edge=4):
     keep[:, -edge:] = 0
     w = S ** 2
     nvalid = keep[..., 0].sum(1)
-    err = (((est - t) ** 2) * w * keep).sum((1, 2))
+    err_c = ((est - t) ** 2) * w * keep                                                # (B, T, ncoef)
+    err0_c = ((e0n - t) ** 2) * w * keep
     ref = ((t ** 2) * w * keep).sum((1, 2)) + 0.05 * nvalid * w.sum((1, 2)) + 1e-6      # 下限: 観測レベルの -13 dB
-    err0 = (((e0n - t) ** 2) * w * keep).sum((1, 2))
-    return (err / ref).mean(), (err0 / ref).mean()
+    err, err0 = err_c.sum((1, 2)), err0_c.sum((1, 2))
+    # 成分 (M, S) ごとに相対誤差を出して平均する (S の誤差も同じ重みで効かせる)
+    half = meta.ncoef // 2 if meta.ncoef >= 128 else meta.ncoef
+    if meta.ncoef >= 128:
+        m_rel = err_c[..., :half].sum((1, 2)) / (((t[..., :half] ** 2) * w[..., :half] * keep).sum((1, 2)) + 0.05 * nvalid * w[..., :half].sum((1, 2)) + 1e-6)
+        s_rel = err_c[..., half:].sum((1, 2)) / (((t[..., half:] ** 2) * w[..., half:] * keep).sum((1, 2)) + 0.05 * nvalid * w[..., half:].sum((1, 2)) + 1e-6)
+        base = 0.5 * (m_rel + s_rel).mean()
+    else:
+        base = (err / ref).mean()
+    harm = (torch.relu(err - err0) / ref).mean()                                       # E0 より悪くした分に罰則
+    spec = spectral_loss(est, t, S, keep)
+    return base + lam_harm * harm + lam_spec * spec, (err0 / ref).mean(), (err / ref).mean()
 
 
 def main():
@@ -102,12 +147,12 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss, base = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)])
+        loss, base, rel = loss_fn(net, meta, *[b.to(dev, non_blocking=True) for b in batch(data, a.bs, rng, a.min_esn0)])
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
         opt.step()
-        run.append(loss.item()); run0.append(base.item())
+        run.append(rel.item()); run0.append(base.item())
         step += 1
         if step % 50 == 0:
             print(f"step {step:5d} {time.time() - t0:5.0f}s  E0 {-10 * np.log10(np.mean(run0[-50:])):6.2f} dB  net {-10 * np.log10(np.mean(run[-50:])):6.2f} dB", flush=True)
