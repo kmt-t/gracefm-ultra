@@ -120,15 +120,15 @@ pub fn viterbi_decode(soft: &[f64], nbits: usize) -> Vec<u8> {
             np[ns] = m0.max(m1);
         }
         if t >= nbits {
-            for ns in 0..NSTATE {
-                if tr.forced[ns] {
-                    np[ns] = neg;
+            for (v, &forced) in np.iter_mut().zip(&tr.forced) {
+                if forced {
+                    *v = neg;
                 }
             }
         }
         let mx = np.iter().cloned().fold(f64::MIN, f64::max);
-        for ns in 0..NSTATE {
-            pm[ns] = (np[ns] - mx).max(neg);
+        for (p, &v) in pm.iter_mut().zip(&np) {
+            *p = (v - mx).max(neg);
         }
     }
     let mut s = 0usize;

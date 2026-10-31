@@ -44,9 +44,9 @@ pub fn lpc(x: &[f64], order: usize) -> Vec<f64> {
         }
     }
     let mut bw = 1.0;
-    for i in 1..=order {
+    for ai in a.iter_mut().skip(1) {
         bw *= 0.998;
-        a[i] *= bw;
+        *ai *= bw;
     }
     a
 }
@@ -125,4 +125,3 @@ pub fn crossfade_switch(y: &[[f64; 2]], patterns: &[Vec<bool>], block: usize, pp
     }
     out
 }
-

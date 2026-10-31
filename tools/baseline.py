@@ -14,26 +14,23 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
 sys.path.insert(0, GRACEFM)
+sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 
-from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm.encoder import Encoder  # noqa: E402
 from gracefm.receiver import receive  # noqa: E402
 from tools.common import metrics, wavio  # noqa: E402
-from gracefm_ultra.channels import loss_mask  # noqa: E402
+import rs  # noqa: E402
 
 AUDIO = ["lossless/Emotional_piano.wav", "lossless/Ceramic_Djembe.wav",
          "lossless/344211_giomilko_c-major-9-bossa-nova-guitar.wav"]
 
 
 def run(x, p, esn0, rate, burst, seed):
-    rng = np.random.default_rng(seed)
+    """送信と通信路は Rust（gfm-tx）、受信は本家 GraceFM（現行の受信機）。返り値: (復号した音声（満点 ±1）, 統計)"""
     xi = wavio.to_pcm24(x)
-    fr = Encoder(p, 0, 0).run(xi)
-    mask = loss_mask(len(fr), rate, burst, rng)
-    rx = [None if m else chan.adc(chan.awgn(f / float(1 << modem.SYM_FRAC), esn0, rng)) for f, m in zip(fr, mask)]
-    y, st = receive(p, rx, None, len(x), 0)
+    frames = rs.tx(p.name, xi, scen=(esn0, 0, rate, burst), seed=seed)
+    y, st = receive(p, rs.to_q22(frames), None, len(x), 0)
     return wavio.from_pcm24(y), st
 
 

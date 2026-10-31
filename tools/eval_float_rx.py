@@ -7,24 +7,20 @@ Ultra の受信（Rust、浮動小数点、engine/gfm-rx）を、本家 GraceFM 
 """
 import argparse
 import os
-import subprocess
 import sys
-import tempfile
 
 import numpy as np
+import soundfile as sf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.gfm import GRACEFM  # noqa: E402
-from gracefm import channel as chan  # noqa: E402
-from gracefm.encoder import Encoder  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm.receiver import receive  # noqa: E402
-from gracefm_ultra.channels import loss_mask  # noqa: E402
-from ref import clip_pcm  # noqa: E402
+from tools.common import wavio  # noqa: E402
+import rs  # noqa: E402
 
-BIN = os.path.join(HERE, "..", "engine", "target", "release", "gfm-rx")
 SRC = os.path.join(GRACEFM, "eval_audio", "train_lossless")
 DELAY = {32000: 3, 48000: 5}
 # (主系, 副系, 主系の Es/N0, 副系の Es/N0, フェージング, 欠落率)
@@ -40,15 +36,11 @@ CASES = [
 ]
 
 
-def write_sym(path, frames):
-    """フレームファイル: u32 フレーム数, u32 シンボル数, フラグ, 届いたフレームの I/Q (i32)"""
-    ns = next(len(f) for f in frames if f is not None)
-    with open(path, "wb") as fh:
-        fh.write(np.array([len(frames), ns], "<u4").tobytes())
-        fh.write(bytes(0 if f is None else 1 for f in frames))
-        for f in frames:
-            if f is not None:
-                fh.write(np.asarray(f, "<i4").tobytes())
+def clip(path, p, nfr):
+    """音源の 10 秒目から nfr フレームぶん（符号つき 24 bit 整数 (n, 2)）"""
+    n = nfr * p.block
+    x, fs = sf.read(path, dtype="float64", always_2d=True, start=int(10 * 44100), frames=int(n / p.fs * 44100) + 2 * 44100)
+    return wavio.to_pcm24(wavio.resample(x[:, :2], fs, p.fs)[int(0.5 * p.fs):int(0.5 * p.fs) + n] * 0.5)
 
 
 def snr(ref, y, mask=None):
@@ -59,32 +51,14 @@ def snr(ref, y, mask=None):
 
 
 def run(case, x, seed):
+    """同じ受信シンボルを、本家の受信（Python、整数）と Ultra の受信（Rust、浮動小数点）にかける。返り値: {名前: (音声（満点 ±1）, 品質コード)}"""
     main, sub, e_a, e_b, kind, loss = case
     pm, ps = PROFILES[main], (PROFILES[sub] if sub else None)
-    rng = np.random.default_rng(seed)
-    fa = Encoder(pm, 0, 0).run(x)
-    fa = chan.through(fa, e_a, chan.fading_gains(len(fa), kind, np.random.default_rng(seed + 1)), rng)
-    mk = loss_mask(len(fa), loss, 4, np.random.default_rng(seed + 2))
-    fa = [None if m else f for f, m in zip(fa, mk)]
-    fb = None
-    if ps:
-        fb = Encoder(ps, 1, 0).run(x)
-        fb = chan.through(fb, e_b, chan.fading_gains(len(fb), kind, np.random.default_rng(seed + 3)), rng)
-        mk = loss_mask(len(fb), loss, 4, np.random.default_rng(seed + 4))
-        fb = [None if m else f for f, m in zip(fb, mk)]
-    y_gfm, st = receive(pm, fa, fb, len(x), 0, profile_b=ps)
-    with tempfile.TemporaryDirectory() as d:
-        a, b, o, q = (os.path.join(d, n) for n in ("a.sym", "b.sym", "o.raw", "q.txt"))
-        write_sym(a, fa)
-        cmd = [BIN, "--profile", main, "--frames-a", a, "--n", str(len(x)), "--out", o, "--quality", q]
-        if ps:
-            write_sym(b, fb)
-            cmd += ["--profile-b", sub, "--frames-b", b]
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode:
-            raise RuntimeError(r.stderr[-300:])
-        y_ultra = np.fromfile(o, "<f4").reshape(-1, 2).astype(np.float64)
-        q_ultra = np.array([int(v) for v in open(q).read().split()])
+    fade = int(kind == "rayleigh")
+    fa = rs.tx(main, x, scen=(e_a, fade, loss, 4), seed=seed, stream_id=0, si=0)
+    fb = rs.tx(sub, x, scen=(e_b, fade, loss, 4), seed=seed, stream_id=1, si=1) if ps else None
+    y_gfm, st = receive(pm, rs.to_q22(fa), rs.to_q22(fb) if ps else None, len(x), 0, profile_b=ps)
+    y_ultra, q_ultra, _ = rs.rx(main, fa, len(x), fb, sub)
     return {"gfm": (y_gfm / float(1 << 23), np.asarray(st["quality"])), "ultra": (y_ultra, q_ultra)}
 
 
@@ -97,7 +71,7 @@ def main():
     for i, case in enumerate(CASES):
         p = PROFILES[case[0]]
         nfr = int(a.seconds * p.fs) // p.block
-        x = np.asarray(clip_pcm(os.path.join(SRC, files[3 + i]), p, nfr, 40000), np.int64)[:nfr * p.block]
+        x = clip(os.path.join(SRC, files[3 + i]), p, nfr)
         ref = x / float(1 << 23)
         res = run(case, x, 200 + i)
         d = DELAY[p.fs]

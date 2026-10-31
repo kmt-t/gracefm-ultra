@@ -71,7 +71,7 @@ pub fn write_npz(path: &str, entries: &[(&str, Npy)]) -> std::io::Result<()> {
         let fname = format!("{}.npy", name);
         let body = arr.to_bytes();
         if body.len() >= u32::MAX as usize {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "配列が 4 GB を超えます"));
+            return Err(std::io::Error::other("配列が 4 GB を超えます"));
         }
         let crc = crc32(&body, &table);
         let offset = out.len() as u32;

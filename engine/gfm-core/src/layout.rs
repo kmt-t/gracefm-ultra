@@ -126,7 +126,11 @@ impl Layout {
         }
         assert_eq!(bit, n_prot);
         for (t, &k) in top_k.iter().enumerate() {
-            if k < p.high_k() { core_top.push(t) } else { high_top.push(t) }
+            if k < p.high_k() {
+                core_top.push(t)
+            } else {
+                high_top.push(t)
+            }
         }
         let has_high_crc = !high_prot.is_empty() || !high_top.is_empty();
         let n_prot_crc = n_prot + fec::CRC_CORE.0 + if has_high_crc { fec::CRC_HIGH.0 } else { 0 };
@@ -143,7 +147,7 @@ impl Layout {
         weak_list.extend(weak);
         let mut n_strong;
         if p.layered() {
-            let length = 2 * ((strong_list.len().max(weak_list.len()) + 1) / 2);
+            let length = 2 * strong_list.len().max(weak_list.len()).div_ceil(2);
             strong_list.resize(length, Tok::Z);
             weak_list.resize(length, Tok::Z);
             n_strong = length;
@@ -200,9 +204,33 @@ impl Layout {
         let coef_flat = coef_items.iter().map(|t| coef_offset[&(t.0, t.1)] + t.2).collect();
         let coef_offset_bits = coef_items.iter().map(|t| offset_of(p.bits(t.0)[t.1])).collect();
         Ok(Layout {
-            p: p.clone(), header_bits, exp_items, attn_items, n_top, n_prot, core_prot, high_prot, core_top, high_top,
-            has_high_crc, n_hdata, n_strong, n_tx, hpar_idx, hdata_idx, htail_idx, tail_idx, parity_idx,
-            coef_stream_idx, top_coef_idx, coef_pos, coef_flat, coef_offset_bits, coef_groups, coef_offset, n_coef: off,
+            p: p.clone(),
+            header_bits,
+            exp_items,
+            attn_items,
+            n_top,
+            n_prot,
+            core_prot,
+            high_prot,
+            core_top,
+            high_top,
+            has_high_crc,
+            n_hdata,
+            n_strong,
+            n_tx,
+            hpar_idx,
+            hdata_idx,
+            htail_idx,
+            tail_idx,
+            parity_idx,
+            coef_stream_idx,
+            top_coef_idx,
+            coef_pos,
+            coef_flat,
+            coef_offset_bits,
+            coef_groups,
+            coef_offset,
+            n_coef: off,
         })
     }
 

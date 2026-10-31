@@ -1,266 +1,213 @@
-//! 学習データの生成: 音源 → 符号化 → 通信路シナリオ → 受信 LLR。tools/gen_dataset.py + tools/prep_haarnet.py と同じ内容を出す。
+//! HaarNet の学習データ生成: 音源 → 符号化 → 通信路シナリオ → 受信 LLR。
+//!
+//! 出力（`Dataset::write` の .npz）は、シナリオ s・フレーム f・仮数ビット nb・係数 nc について:
+//! - `llr` (s, f, nb) i8: 受信 LLR（自然対数の LLR の 4 倍、±127 に飽和。欠落フレームは 0）
+//! - `bits` (f, nb) u8: 送信した仮数ビット（スクランブル前）
+//! - `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）
+//! - `coef0` / `coefq` (f, nc) f32: 量子化前 / 後の係数（同じ尺度）。係数の並びは Layout の coef_offset 順
+//! - `lost` (s, f) bool、`esn0` (s, f) f32（フェージング込み）、`var` (s, f) i64（軸あたりの雑音分散。(Q22 の距離 / 64)² の単位）、`scen` (s, 4) f32
+//! - ビットの属性: `pos`（仮数内の位置）、`coef_of_bit`（係数の番号）、`strong`（強い位置か）、`protected`（FEC で守る上位ビットか）、`group`（係数の（成分, 帯域）の番号）
 
-use rand::{Rng, SeedableRng};
-use rand_pcg::Pcg64;
-
-use crate::codec::{analyze, exp_range, reconstruct_hard, FRAC};
+use crate::channel::{awgn_adc, Link, Scen};
+use crate::codec::{analyze, exp_range};
+use crate::decoder::reconstruct_coeffs;
 use crate::encoder::Encoder;
 use crate::layout::Layout;
-use crate::modem::{Modem, N_PREAMBLE, SYM_FRAC};
-use crate::scrambler::Scrambler;
+use crate::modem::{Modem, N_PREAMBLE};
 use crate::npz::{write_npz, Npy};
 use crate::profiles::Profile;
+use crate::scrambler::Scrambler;
 
-#[derive(Clone, Copy, Debug)]
-pub struct Scen {
-    pub e0: f64,
-    pub fade: bool,
-    pub rate: f64,
-    pub burst: f64,
-}
-
-struct Gauss {
-    rng: Pcg64,
-    spare: Option<f64>,
-}
-
-impl Gauss {
-    fn new(seed: u64) -> Gauss {
-        Gauss { rng: Pcg64::seed_from_u64(seed), spare: None }
-    }
-    fn normal(&mut self) -> f64 {
-        if let Some(v) = self.spare.take() {
-            return v;
-        }
-        let u1 = 1.0 - self.rng.gen::<f64>();
-        let u2 = self.rng.gen::<f64>();
-        let r = (-2.0 * u1.ln()).sqrt();
-        let t = 2.0 * std::f64::consts::PI * u2;
-        self.spare = Some(r * t.sin());
-        r * t.cos()
-    }
-}
-
-/// フレームごとの電力利得（平均 1）。rayleigh: 複素利得を AR(1)（時定数 50 フレーム）で相関させる
-fn fading_gains(nfr: usize, rayleigh: bool, g: &mut Gauss) -> Vec<f64> {
-    if !rayleigh {
-        return vec![1.0; nfr];
-    }
-    let rho = (-1.0f64 / 50.0).exp();
-    let s = (1.0 - rho * rho).sqrt();
-    let cn = |g: &mut Gauss| (g.normal() / 2f64.sqrt(), g.normal() / 2f64.sqrt());
-    let mut h = cn(g);
-    let mut out = vec![h.0 * h.0 + h.1 * h.1];
-    for _ in 1..nfr {
-        let w = cn(g);
-        h = (rho * h.0 + s * w.0, rho * h.1 + s * w.1);
-        out.push(h.0 * h.0 + h.1 * h.1);
-    }
-    out
-}
-
-/// Gilbert-Elliott 型の欠落。rate: 欠落率、burst: 平均バースト長
-fn loss_mask(nfr: usize, rate: f64, burst: f64, rng: &mut Pcg64) -> Vec<bool> {
-    if rate <= 0.0 {
-        return vec![false; nfr];
-    }
-    let p_bg = 1.0 / burst;
-    let p_gb = rate * p_bg / (1.0 - rate);
-    let mut bad = false;
-    let mut out = Vec::with_capacity(nfr);
-    for _ in 0..nfr {
-        out.push(bad);
-        bad = if bad { rng.gen::<f64>() >= p_bg } else { rng.gen::<f64>() < p_gb };
-    }
-    out
-}
-
-const ADC_BITS: i64 = 12;
-const ADC_ONE: f64 = (1 << (ADC_BITS - 2)) as f64;
-/// 学習データの LLR は整数（自然対数の LLR の 4 倍、±127 に飽和）、雑音分散は (Q22 の距離 / 64)² の単位
 const LLR_SCALE: f64 = 4.0;
 const VAR_UNIT: f64 = (1u64 << 32) as f64;
+const Q22: f64 = (1u64 << 22) as f64;
 
-/// 実数のシンボルに Es/N0 = snr_db の雑音を加え、12 bit の ADC で量子化する（返り値は ±1 = 1.0 の実数）
-fn awgn_adc(sym: &[[i64; 2]], snr_db: f64, g: &mut Gauss) -> Vec<[f64; 2]> {
-    let n0 = 10f64.powf(-snr_db / 10.0);
-    let std = (n0 / 2.0).sqrt();
-    let one = (1u64 << SYM_FRAC) as f64;
-    sym.iter()
-        .map(|s| {
-            let mut o = [0f64; 2];
-            for ax in 0..2 {
-                let v = s[ax] as f64 / one + std * g.normal();
-                let code = (v * ADC_ONE).round_ties_even().clamp(-(1 << (ADC_BITS - 1)) as f64, ((1 << (ADC_BITS - 1)) - 1) as f64);
-                o[ax] = code / ADC_ONE;
-            }
-            o
-        })
-        .collect()
+/// 送信側の結果（シナリオに依らない）
+struct Transmitted {
+    bits: Vec<u8>,      // (F, nbit)
+    bits_full: Vec<u8>, // (F, n_tx)。full のときだけ
+    step: Vec<f32>,
+    coef0: Vec<f32>,
+    coefq: Vec<f32>,
+    syms: Vec<Vec<[f64; 2]>>,
 }
 
-pub struct Output {
-    pub profile: Profile,
+/// 1 つの通信路シナリオの受信結果
+struct Received {
+    llr: Vec<i8>,      // (F, nbit)
+    llr_full: Vec<i8>, // (F, n_tx)。full のときだけ
+    lost: Vec<bool>,
+    esn0: Vec<f32>,
+    var: Vec<i64>,
+}
+
+/// 生成した学習データ
+pub struct Dataset {
     pub nfr: usize,
     pub nbit: usize,
     pub ncoef: usize,
-    pub scens: Vec<Scen>,
-    pub llr: Vec<i8>,       // (S, F, nbit)
-    pub bits: Vec<u8>,      // (F, nbit)
-    pub step: Vec<f32>,     // (F, ncoef)
-    pub coef0: Vec<f32>,
-    pub coefq: Vec<f32>,
-    pub lost: Vec<bool>,    // (S, F)
-    pub esn0: Vec<f32>,
-    pub var: Vec<i64>,
-    pub pos: Vec<i64>,
-    pub coef_of_bit: Vec<i64>,
-    pub strong: Vec<u8>,
-    pub protected: Vec<u8>,
-    pub group: Vec<i64>,
-    pub bits_full: Vec<u8>, // (F, n_tx)
-    pub llr_full: Vec<i8>,  // (S, F, n_tx)
     pub n_tx: usize,
+    pub scens: Vec<Scen>,
+    tx: Transmitted,
+    rx: Vec<Received>,
+    pos: Vec<i64>,
+    coef_of_bit: Vec<i64>,
+    strong: Vec<u8>,
+    protected: Vec<u8>,
+    group: Vec<i64>,
 }
 
-pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, threads: usize, full: bool) -> Result<Output, String> {
-    let lay = Layout::new(p)?;
-    let modem = Modem::new(p.qam16h, p.alpha);
-    let bps = modem.bits_per_symbol();
-    let nsym = modem.n_symbols(lay.n_tx, lay.n_strong);
+fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) -> Result<Transmitted, String> {
     let nfr = pcm.len() / p.block;
     let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
-    let scr = Scrambler::new(nsym * bps);
     let mut enc = Encoder::new(p, 0, 0)?;
-
-    let mut bits = vec![0u8; nfr * nbit];
-    let mut step = vec![0f32; nfr * ncoef];
-    let mut coef0 = vec![0f32; nfr * ncoef];
-    let mut coefq = vec![0f32; nfr * ncoef];
-    let mut bits_full = if full { vec![0u8; nfr * lay.n_tx] } else { Vec::new() };
-    let mut syms: Vec<Vec<[i64; 2]>> = Vec::with_capacity(nfr);
+    let mut t = Transmitted {
+        bits: vec![0; nfr * nbit],
+        bits_full: if full { vec![0; nfr * lay.n_tx] } else { Vec::new() },
+        step: vec![0.0; nfr * ncoef],
+        coef0: vec![0.0; nfr * ncoef],
+        coefq: vec![0.0; nfr * ncoef],
+        syms: Vec::with_capacity(nfr),
+    };
     for i in 0..nfr {
         let blk = &pcm[i * p.block..(i + 1) * p.block];
-        let (bd, stream, sym) = enc.encode_frame_parts(blk);
-        syms.push(sym);
+        let (bd, stream, sym) = enc.frame_parts(blk);
+        t.syms.push(sym);
         for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
-            bits[i * nbit + j] = stream[idx];
+            t.bits[i * nbit + j] = stream[idx];
         }
         if full {
-            bits_full[i * lay.n_tx..(i + 1) * lay.n_tx].copy_from_slice(&stream);
+            t.bits_full[i * lay.n_tx..(i + 1) * lay.n_tx].copy_from_slice(&stream);
         }
-        let bands_all = analyze(blk, p);
-        let dq = reconstruct_hard(&bd, p);
+        let bands = analyze(blk, p);
+        let quantized = reconstruct_coeffs(lay, &bd);
         for &(ch, k) in &lay.coef_groups {
-            let o = lay.coef_offset[&(ch, k)];
-            let b = p.bits(ch)[k];
-            let bands = &bands_all[ch];
-            let (emin, _) = exp_range(k, b, p);
-            let s = bd.eidx[ch][k].unwrap() + emin + FRAC;
+            let o = i * ncoef + lay.coef_offset[&(ch, k)];
+            let e = bd.eidx[ch][k].unwrap() + exp_range(k, p.bits(ch)[k], p).0;
             let attn = bd.attn[ch][k].as_ref().unwrap();
-            let group = p.attenuator_group(ch, k);
             for j in 0..p.ncoef(k) {
-                let a = if group > 0 { attn[j / group] } else { 0 };
-                step[i * ncoef + o + j] = 2f64.powi((s - a) as i32) as f32;
-                coef0[i * ncoef + o + j] = bands[k][j] as f32;
-                coefq[i * ncoef + o + j] = dq[ch][k][j] as f32;
+                t.step[o + j] = (2f64.powi((e - p.attn_at(ch, k, attn, j)) as i32) * Q22) as f32;
+                t.coef0[o + j] = (bands[ch][k][j] * Q22) as f32;
+                t.coefq[o + j] = (quantized[ch][k][j] * Q22) as f32;
             }
         }
     }
-
-    // 通信路: シナリオごと
-    let ns = scens.len();
-    let results: Vec<(Vec<i8>, Vec<i8>, Vec<bool>, Vec<f32>, Vec<i64>)> = {
-        let work = |si: usize| -> (Vec<i8>, Vec<i8>, Vec<bool>, Vec<f32>, Vec<i64>) {
-            let sc = scens[si];
-            let mut gfade = Gauss::new(seed * 1000 + si as u64);
-            let gains = fading_gains(nfr, sc.fade, &mut gfade);
-            let mut lrng = Pcg64::seed_from_u64(seed * 1000 + 500 + si as u64);
-            let lost = loss_mask(nfr, sc.rate, sc.burst, &mut lrng);
-            let mut crng = Gauss::new(seed * 1000 + 900 + si as u64);
-            let mut llr = vec![0i8; nfr * nbit];
-            let mut llr_full = if full { vec![0i8; nfr * lay.n_tx] } else { Vec::new() };
-            let mut esn0 = vec![0f32; nfr];
-            let mut var = vec![0i64; nfr];
-            for i in 0..nfr {
-                let e = sc.e0 + 10.0 * gains[i].max(1e-6).log10();
-                esn0[i] = e as f32;
-                if lost[i] {
-                    continue;
-                }
-                let rx = awgn_adc(&syms[i][N_PREAMBLE..], e, &mut crng);
-                let (l, _, v) = modem.demodulate(&rx, lay.n_tx);
-                var[i] = ((v * VAR_UNIT).round() as i64).max(1);
-                let fix = |q: usize| -> i8 { ((if scr.sign(q) { -l[q] } else { l[q] }) * LLR_SCALE).round().clamp(-127.0, 127.0) as i8 };
-                for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
-                    llr[i * nbit + j] = fix(idx);
-                }
-                if full {
-                    for q in 0..lay.n_tx {
-                        llr_full[i * lay.n_tx + q] = fix(q);
-                    }
-                }
-            }
-            (llr, llr_full, lost, esn0, var)
-        };
-        let threads = threads.max(1).min(ns.max(1));
-        let mut res: Vec<Option<_>> = (0..ns).map(|_| None).collect();
-        std::thread::scope(|sc| {
-            let work = &work;
-            let mut handles = Vec::new();
-            for t in 0..threads {
-                handles.push(sc.spawn(move || (t..ns).step_by(threads).map(|si| (si, work(si))).collect::<Vec<_>>()));
-            }
-            for h in handles {
-                for (si, r) in h.join().unwrap() {
-                    res[si] = Some(r);
-                }
-            }
-        });
-        res.into_iter().map(|r| r.unwrap()).collect()
-    };
-
-    let mut out = Output {
-        profile: p.clone(), nfr, nbit, ncoef, scens: scens.to_vec(), llr: Vec::new(), bits, step, coef0, coefq,
-        lost: Vec::new(), esn0: Vec::new(), var: Vec::new(), pos: lay.coef_pos.clone(),
-        coef_of_bit: lay.coef_flat.iter().map(|&v| v as i64).collect(), strong: Vec::new(), protected: Vec::new(),
-        group: vec![0; ncoef], bits_full, llr_full: Vec::new(), n_tx: lay.n_tx,
-    };
-    for (llr, llr_full, lost, esn0, var) in results {
-        out.llr.extend(llr);
-        out.llr_full.extend(llr_full);
-        out.lost.extend(lost);
-        out.esn0.extend(esn0);
-        out.var.extend(var);
-    }
-    out.strong = lay.coef_stream_idx.iter().map(|&i| (i < lay.n_strong) as u8).collect();
-    let mut prot = vec![0u8; nbit];
-    for &i in &lay.top_coef_idx {
-        prot[i] = 1;
-    }
-    out.protected = prot;
-    for (gi, &(ch, k)) in lay.coef_groups.iter().enumerate() {
-        let o = lay.coef_offset[&(ch, k)];
-        for j in 0..p.ncoef(k) {
-            out.group[o + j] = gi as i64;
-        }
-    }
-    Ok(out)
+    Ok(t)
 }
 
-impl Output {
+/// 受信側の共通の道具（全シナリオで共有する）
+struct Receiver<'a> {
+    lay: &'a Layout,
+    modem: &'a Modem,
+    scr: &'a Scrambler,
+    tx: &'a Transmitted,
+    seed: u64,
+    full: bool,
+}
+
+impl Receiver<'_> {
+    /// シナリオ si の通信路を通した受信 LLR
+    fn scenario(&self, sc: &Scen, si: usize) -> Received {
+        let (lay, nfr, nbit) = (self.lay, self.tx.syms.len(), self.lay.n_coef_bits());
+        let mut link = Link::new(sc, nfr, self.seed, si as u64);
+        let mut r = Received {
+            llr: vec![0; nfr * nbit],
+            llr_full: if self.full { vec![0; nfr * lay.n_tx] } else { Vec::new() },
+            lost: link.lost.clone(),
+            esn0: link.esn0.iter().map(|&e| e as f32).collect(),
+            var: vec![0; nfr],
+        };
+        for (i, sym) in self.tx.syms.iter().enumerate() {
+            if link.lost[i] {
+                continue;
+            }
+            let rx = awgn_adc(sym, link.esn0[i], &mut link.noise); // プリアンブルにも雑音を加える（gfm-tx と同じ実現になる）
+            let (llr, _, var) = self.modem.demodulate(&rx[N_PREAMBLE..], lay.n_tx);
+            r.var[i] = ((var * VAR_UNIT).round() as i64).max(1);
+            let quantize =
+                |q: usize| -> i8 { ((if self.scr.sign(q) { -llr[q] } else { llr[q] }) * LLR_SCALE).round().clamp(-127.0, 127.0) as i8 };
+            for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
+                r.llr[i * nbit + j] = quantize(idx);
+            }
+            if self.full {
+                for q in 0..lay.n_tx {
+                    r.llr_full[i * lay.n_tx + q] = quantize(q);
+                }
+            }
+        }
+        r
+    }
+}
+
+/// f(0), f(1), ..., f(n-1) を threads 本のスレッドで計算して、順に返す
+fn parallel_map<T: Send>(n: usize, threads: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
+    let threads = threads.clamp(1, n.max(1));
+    let mut out: Vec<Option<T>> = (0..n).map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let f = &f;
+        let handles: Vec<_> =
+            (0..threads).map(|t| scope.spawn(move || (t..n).step_by(threads).map(|i| (i, f(i))).collect::<Vec<_>>())).collect();
+        for h in handles {
+            for (i, v) in h.join().expect("スレッドが異常終了しました") {
+                out[i] = Some(v);
+            }
+        }
+    });
+    out.into_iter().map(|v| v.expect("全ての要素を計算したはず")).collect()
+}
+
+/// pcm（満点 ±1 の L/R）から、各シナリオの学習データを作る。full: 全送信位置の bits_full / llr_full も残す（試験用）
+pub fn generate(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, threads: usize, full: bool) -> Result<Dataset, String> {
+    let lay = Layout::new(p)?;
+    let modem = Modem::new(p.qam16h, p.alpha);
+    let scr = Scrambler::new(modem.n_symbols(lay.n_tx, lay.n_strong) * modem.bits_per_symbol());
+    let tx = transmit(p, &lay, pcm, full)?;
+    let receiver = Receiver { lay: &lay, modem: &modem, scr: &scr, tx: &tx, seed, full };
+    let rx = parallel_map(scens.len(), threads, |si| receiver.scenario(&scens[si], si));
+    let mut protected = vec![0u8; lay.n_coef_bits()];
+    for &i in &lay.top_coef_idx {
+        protected[i] = 1;
+    }
+    let mut group = vec![0i64; lay.n_coef];
+    for (gi, &(ch, k)) in lay.coef_groups.iter().enumerate() {
+        let o = lay.coef_offset[&(ch, k)];
+        group[o..o + p.ncoef(k)].fill(gi as i64);
+    }
+    Ok(Dataset {
+        nfr: tx.syms.len(),
+        nbit: lay.n_coef_bits(),
+        ncoef: lay.n_coef,
+        n_tx: lay.n_tx,
+        scens: scens.to_vec(),
+        pos: lay.coef_pos.clone(),
+        coef_of_bit: lay.coef_flat.iter().map(|&v| v as i64).collect(),
+        strong: lay.coef_stream_idx.iter().map(|&i| (i < lay.n_strong) as u8).collect(),
+        protected,
+        group,
+        tx,
+        rx,
+    })
+}
+
+impl Dataset {
+    /// .npz に書く。start: 音源の中の開始位置（記録用）
     pub fn write(&self, path: &str, start: i64) -> std::io::Result<()> {
         let (s, f, nb, nc) = (self.scens.len(), self.nfr, self.nbit, self.ncoef);
+        let cat = |get: &dyn Fn(&Received) -> Vec<i8>| -> Vec<i8> { self.rx.iter().flat_map(get).collect() };
+        let llr = cat(&|r| r.llr.clone());
+        let lost: Vec<bool> = self.rx.iter().flat_map(|r| r.lost.clone()).collect();
+        let esn0: Vec<f32> = self.rx.iter().flat_map(|r| r.esn0.clone()).collect();
+        let var: Vec<i64> = self.rx.iter().flat_map(|r| r.var.clone()).collect();
         let scen: Vec<f32> = self.scens.iter().flat_map(|c| [c.e0 as f32, c.fade as u8 as f32, c.rate as f32, c.burst as f32]).collect();
         let mut entries: Vec<(&str, Npy)> = vec![
-            ("llr", Npy::i8(&self.llr, &[s, f, nb])),
-            ("bits", Npy::u8(&self.bits, &[f, nb])),
-            ("step", Npy::f32(&self.step, &[f, nc])),
-            ("coef0", Npy::f32(&self.coef0, &[f, nc])),
-            ("coefq", Npy::f32(&self.coefq, &[f, nc])),
-            ("lost", Npy::bool(&self.lost, &[s, f])),
-            ("esn0", Npy::f32(&self.esn0, &[s, f])),
-            ("var", Npy::i64(&self.var, &[s, f])),
+            ("llr", Npy::i8(&llr, &[s, f, nb])),
+            ("bits", Npy::u8(&self.tx.bits, &[f, nb])),
+            ("step", Npy::f32(&self.tx.step, &[f, nc])),
+            ("coef0", Npy::f32(&self.tx.coef0, &[f, nc])),
+            ("coefq", Npy::f32(&self.tx.coefq, &[f, nc])),
+            ("lost", Npy::bool(&lost, &[s, f])),
+            ("esn0", Npy::f32(&esn0, &[s, f])),
+            ("var", Npy::i64(&var, &[s, f])),
             ("scen", Npy::f32(&scen, &[s, 4])),
             ("pos", Npy::i64(&self.pos, &[nb])),
             ("coef_of_bit", Npy::i64(&self.coef_of_bit, &[nb])),
@@ -269,9 +216,10 @@ impl Output {
             ("group", Npy::i64(&self.group, &[nc])),
             ("start", Npy::i64(&[start], &[])),
         ];
-        if !self.bits_full.is_empty() {
-            entries.push(("bits_full", Npy::u8(&self.bits_full, &[f, self.n_tx])));
-            entries.push(("llr_full", Npy::i8(&self.llr_full, &[s, f, self.n_tx])));
+        if !self.tx.bits_full.is_empty() {
+            let llr_full = cat(&|r| r.llr_full.clone());
+            entries.push(("bits_full", Npy::u8(&self.tx.bits_full, &[f, self.n_tx])));
+            entries.push(("llr_full", Npy::i8(&llr_full, &[s, f, self.n_tx])));
         }
         write_npz(path, &entries)
     }

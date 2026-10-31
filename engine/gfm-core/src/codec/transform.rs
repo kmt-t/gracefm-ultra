@@ -1,45 +1,12 @@
-//! 変換: M/S 分離と Haar 多段分解。送信 `analyze` は整数（ビット列の定義に関わる。GraceFM `gracefm/codec.py` の移植）、
-//! 受信 `synthesize` は浮動小数点（直交な逆 Haar）。係数の尺度は両者で同じ（満点 = 1.0 に対する値）。
-//! 帯域係数は `[成分 0=M 1=S][帯域 k][係数 j]`。
+//! 変換: M/S 分離と Haar 多段分解（送信 `analyze`）、その逆（受信 `synthesize`）。GraceFM `gracefm/codec.py` に相当。浮動小数点。
+//! 信号の尺度は満点 = 1.0。M = (L+R)/2、S = (L-R)/2。Haar は直交（1/√2）。帯域係数は `[成分 0=M 1=S][帯域 k][係数 j]`。
 
-use crate::dsp::{mac_sq2_inv, saturate};
 use crate::profiles::Profile;
-
-/// 送信（整数）。帯域の並びは [低域近似, 詳細（低→高）]
-pub fn haar_forward(x: &[i64], levels: usize) -> Vec<Vec<i64>> {
-    let mut a: Vec<i64> = x.iter().map(|&v| saturate(v)).collect();
-    let mut details = Vec::new();
-    for _ in 0..levels {
-        let n = a.len() / 2;
-        let mut d = Vec::with_capacity(n);
-        let mut s = Vec::with_capacity(n);
-        for i in 0..n {
-            let (e, o) = (a[2 * i], a[2 * i + 1]);
-            d.push(mac_sq2_inv(e, o, -1));
-            s.push(mac_sq2_inv(e, o, 1));
-        }
-        details.push(d);
-        a = s;
-    }
-    let mut out = vec![a];
-    out.extend(details.into_iter().rev());
-    out
-}
-
-/// L/R（符号つき 24 bit PCM）→ M/S（小数 22 bit の整数）。M = (L+R)/2、S = (L-R)/2（最後の 2 bit を四捨五入）
-pub fn ms_split(x: &[[i64; 2]]) -> [Vec<i64>; 2] {
-    [x.iter().map(|v| (v[0] + v[1] + 2) >> 2).collect(), x.iter().map(|v| (v[0] - v[1] + 2) >> 2).collect()]
-}
-
-/// 送信: PCM ブロック → 帯域係数（整数、小数 22 bit）
-pub fn analyze(pcm: &[[i64; 2]], p: &Profile) -> Vec<Vec<Vec<i64>>> {
-    ms_split(pcm).iter().map(|x| haar_forward(x, p.levels)).collect()
-}
 
 const SQRT_HALF: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
-/// 浮動小数点の Haar 分解（2 系統の融合で使う）
-pub fn haar_forward_f(x: &[f64], levels: usize) -> Vec<Vec<f64>> {
+/// 帯域の並びは [低域近似, 詳細（低→高）]
+pub fn haar_forward(x: &[f64], levels: usize) -> Vec<Vec<f64>> {
     let mut a = x.to_vec();
     let mut details = Vec::new();
     for _ in 0..levels {
@@ -72,14 +39,24 @@ pub fn haar_inverse(bands: &[Vec<f64>]) -> Vec<f64> {
     a
 }
 
-/// 受信: 帯域係数（浮動小数点、満点 ±1）→ L/R（満点 ±1）。L = M + S、R = M - S
+/// L/R → M/S。M = (L+R)/2、S = (L-R)/2
+pub fn ms_split(x: &[[f64; 2]]) -> [Vec<f64>; 2] {
+    [x.iter().map(|v| (v[0] + v[1]) * 0.5).collect(), x.iter().map(|v| (v[0] - v[1]) * 0.5).collect()]
+}
+
+/// M/S → L/R。L = M + S、R = M - S
+pub fn ms_to_lr(m: f64, s: f64) -> [f64; 2] {
+    [m + s, m - s]
+}
+
+/// 送信: PCM ブロック（満点 ±1 の L/R）→ 帯域係数。M/S 分離と Haar 多段分解
+pub fn analyze(pcm: &[[f64; 2]], p: &Profile) -> Vec<Vec<Vec<f64>>> {
+    ms_split(pcm).iter().map(|x| haar_forward(x, p.levels)).collect()
+}
+
+/// 受信: 帯域係数 → PCM ブロック。Haar の逆変換と M/S の逆変換（analyze の逆）
 pub fn synthesize(bands: &[Vec<Vec<f64>>]) -> Vec<[f64; 2]> {
     let m = haar_inverse(&bands[0]);
     let s = haar_inverse(&bands[1]);
-    (0..m.len()).map(|i| [m[i] + s[i], m[i] - s[i]]).collect()
-}
-
-/// L/R（満点 ±1）→ M/S。M = (L+R)/2、S = (L-R)/2
-pub fn ms_split_f(x: &[[f64; 2]]) -> [Vec<f64>; 2] {
-    [x.iter().map(|v| (v[0] + v[1]) * 0.5).collect(), x.iter().map(|v| (v[0] - v[1]) * 0.5).collect()]
+    (0..m.len()).map(|i| ms_to_lr(m[i], s[i])).collect()
 }

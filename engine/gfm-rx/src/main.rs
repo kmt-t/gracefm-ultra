@@ -1,9 +1,8 @@
 //! 受信（デコーダ、浮動小数点）。使い方:
 //!   gfm-rx --profile B200 [--profile-b SUB100] --frames-a a.sym [--frames-b b.sym] --n N [--offset-b K] --out out.raw [--quality q.txt]
-//! フレームファイル (.sym): u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (i32 リトルエンディアン、±1 = 2^22)。
+//! フレームファイル (.sym): u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 //! out.raw: L/R の交互の f32（満点 ±1）。
 
-use gfm_core::decoder::to_float;
 use gfm_core::profiles::profile_by_name;
 use gfm_core::receiver::receive;
 
@@ -21,19 +20,20 @@ fn read_sym(path: &str) -> Vec<Option<Vec<[f64; 2]>>> {
         }
         let mut fr = Vec::with_capacity(ns);
         for _ in 0..ns {
-            let i = i32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]]) as i64;
-            let q = i32::from_le_bytes([d[o + 4], d[o + 5], d[o + 6], d[o + 7]]) as i64;
+            let i = f32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]]) as f64;
+            let q = f32::from_le_bytes([d[o + 4], d[o + 5], d[o + 6], d[o + 7]]) as f64;
             fr.push([i, q]);
             o += 8;
         }
-        out.push(Some(to_float(&fr)));
+        out.push(Some(fr));
     }
     out
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let (mut profile, mut profile_b, mut fa, mut fb, mut out, mut qpath) = (String::new(), String::new(), String::new(), String::new(), String::new(), String::new());
+    let (mut profile, mut profile_b, mut fa, mut fb, mut out, mut qpath) =
+        (String::new(), String::new(), String::new(), String::new(), String::new(), String::new());
     let (mut n, mut offset_b) = (0usize, 0usize);
     let mut i = 1;
     while i < args.len() {
@@ -52,7 +52,11 @@ fn main() {
         i += 2;
     }
     let p = profile_by_name(&profile).unwrap_or_else(|| panic!("不明なプロファイル: {}", profile));
-    let pb = if profile_b.is_empty() { None } else { Some(profile_by_name(&profile_b).unwrap_or_else(|| panic!("不明なプロファイル: {}", profile_b))) };
+    let pb = if profile_b.is_empty() {
+        None
+    } else {
+        Some(profile_by_name(&profile_b).unwrap_or_else(|| panic!("不明なプロファイル: {}", profile_b)))
+    };
     let frames_a = read_sym(&fa);
     let frames_b = if fb.is_empty() { None } else { Some(read_sym(&fb)) };
     let t0 = std::time::Instant::now();
@@ -68,6 +72,12 @@ fn main() {
     }
     eprintln!(
         "frames {} lost {} crc_fail {} high_crc_fail {} recovered {} plc_samples {} ({:.2}s)",
-        r.stats_a.frames, r.stats_a.lost, r.stats_a.crc_fail, r.stats_a.high_crc_fail, r.stats_a.recovered, r.plc_samples, t0.elapsed().as_secs_f64()
+        r.stats_a.frames,
+        r.stats_a.lost,
+        r.stats_a.crc_fail,
+        r.stats_a.high_crc_fail,
+        r.stats_a.recovered,
+        r.plc_samples,
+        t0.elapsed().as_secs_f64()
     );
 }

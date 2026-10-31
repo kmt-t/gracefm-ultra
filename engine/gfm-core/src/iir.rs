@@ -71,7 +71,10 @@ pub fn apply_alt(y: &[[f64; 2]], quality: &[i64], fs: usize, block: usize) -> Ve
     select_by_quality(&delayed, &alt, quality, block, fs / 1000)
 }
 
-
 pub fn alt_delay(fs: usize) -> usize {
-    if fs == 32000 { 3 } else { 5 }
+    if fs == 32000 {
+        3
+    } else {
+        5
+    }
 }

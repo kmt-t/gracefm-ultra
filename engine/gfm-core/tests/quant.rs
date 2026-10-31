@@ -1,0 +1,96 @@
+//! 量子化（quantize_band / quantize）と、変換（analyze / synthesize）。
+
+mod common;
+use common::{stereo, Rng, PROFILES};
+use gfm_core::codec::*;
+use gfm_core::profiles::profile_by_name;
+
+#[test]
+fn analysis_and_synthesis_are_inverse() {
+    let p = profile_by_name("B200").unwrap();
+    let x = stereo(64, 1);
+    let y = synthesize(&analyze(&x, &p));
+    for (a, b) in x.iter().zip(&y) {
+        assert!((a[0] - b[0]).abs() < 1e-12 && (a[1] - b[1]).abs() < 1e-12);
+    }
+    // 直交変換: エネルギーが保存される（M/S は 1/2 倍ずつ、L²+R² = 2(M²+S²)）
+    let bands = analyze(&x, &p);
+    let e_bands: f64 = bands.iter().flatten().flatten().map(|v| v * v).sum();
+    let e_pcm: f64 = x.iter().map(|s| s[0] * s[0] + s[1] * s[1]).sum();
+    assert!((2.0 * e_bands - e_pcm).abs() < 1e-9 * e_pcm);
+}
+
+#[test]
+fn quantization_error_is_within_half_a_step() {
+    let mut rng = Rng::new(2);
+    for name in PROFILES {
+        let p = profile_by_name(name).unwrap();
+        for ch in 0..2 {
+            for k in 0..p.nbands() {
+                let b = p.bits(ch)[k];
+                if b == 0 {
+                    continue;
+                }
+                let n = p.ncoef(k);
+                let c: Vec<f64> = (0..n).map(|_| (rng.uniform() - 0.5) * 0.6).collect();
+                let (m, eidx, attn) = quantize_band(&c, ch, k, &p, false);
+                let (emin, emax) = exp_range(k, b, &p);
+                assert!((0..=emax - emin).contains(&eidx), "{} ch{} k{}: 指数 {}", name, ch, k, eidx);
+                let e = eidx + emin;
+                for j in 0..n {
+                    let step = 2f64.powi((e - p.attn_at(ch, k, &attn, j)) as i32);
+                    assert!(m[j].abs() <= qmax_of(b), "仮数が範囲外");
+                    // 飽和していなければ、誤差は刻みの半分以内
+                    if (m[j].abs()) < qmax_of(b) {
+                        assert!((c[j] - m[j] as f64 * step).abs() <= step / 2.0 + 1e-15, "{} ch{} k{} j{}", name, ch, k, j);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn silence_and_overload_are_handled() {
+    let p = profile_by_name("B200").unwrap();
+    let (m, eidx, _) = quantize_band(&[0.0; 4], 0, 0, &p, true);
+    assert!(m.iter().all(|&v| v == 0) && eidx == 0, "無音は仮数 0、指数は最小");
+    let b = p.bits(0)[0];
+    let (m, _, _) = quantize_band(&[1e9, -1e9, 0.0, 0.0], 0, 0, &p, true);
+    assert_eq!((m[0], m[1]), (qmax_of(b), qmin_of(b)), "大きすぎる値は飽和する");
+}
+
+#[test]
+fn attenuator_never_increases_the_error() {
+    // B200 の M 帯域 k=2 は 2 係数ごとに 1 bit のアッテネータ。アッテネータで刻みを半分にして誤差が減る区間だけ 1 になる
+    let p = profile_by_name("B200").unwrap();
+    let mut rng = Rng::new(3);
+    let c: Vec<f64> = (0..8).map(|_| (rng.uniform() - 0.5) * 0.2).collect();
+    let (m, eidx, attn) = quantize_band(&c, 0, 2, &p, false);
+    assert_eq!(attn.len(), 4);
+    let (emin, _) = exp_range(2, p.bits(0)[2], &p);
+    let step = 2f64.powi((eidx + emin) as i32);
+    for (g, &used_attn) in attn.iter().enumerate() {
+        let err = |half: bool, mm: &[i64]| -> f64 {
+            (2 * g..2 * g + 2).map(|j| (c[j] - mm[j] as f64 * if half { step / 2.0 } else { step }).powi(2)).sum()
+        };
+        let used = err(used_attn == 1, &m);
+        let m0: Vec<i64> = c.iter().map(|v| (v / step + 0.5).floor() as i64).collect();
+        assert!(used <= err(false, &m0) + 1e-18, "区間 {} でアッテネータが誤差を増やした", g);
+    }
+}
+
+#[test]
+fn clip_optimization_never_increases_the_error() {
+    let p = profile_by_name("B200").unwrap();
+    let mut rng = Rng::new(4);
+    // まれに大きなピークがある信号: 指数を 1 つ下げて、ピークを飽和させるほうが誤差が小さくなりうる
+    let mut c: Vec<f64> = (0..32).map(|_| (rng.uniform() - 0.5) * 0.01).collect();
+    c[3] = 0.5;
+    let recon = |clip: bool| -> f64 {
+        let (m, eidx, attn) = quantize_band(&c, 0, 4, &p, clip);
+        let (emin, _) = exp_range(4, p.bits(0)[4], &p);
+        (0..32).map(|j| (c[j] - m[j] as f64 * 2f64.powi((eidx + emin - p.attn_at(0, 4, &attn, j)) as i32)).powi(2)).sum()
+    };
+    assert!(recon(true) <= recon(false) + 1e-18);
+}

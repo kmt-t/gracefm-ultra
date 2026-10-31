@@ -18,6 +18,6 @@ fn butterworth_is_stable_and_has_unit_dc_gain() {
         let x: Vec<[f64; 2]> = (0..4000).map(|i| [(w * i as f64).sin(), 0.0]).collect();
         let y = iir_filter(&x, &sec);
         let peak = y[2000..].iter().map(|v| v[0].abs()).fold(0.0, f64::max);
-        assert!((peak - 0.7071).abs() < 0.02, "カットオフでの振幅 {}", peak);
+        assert!((peak - std::f64::consts::FRAC_1_SQRT_2).abs() < 0.02, "カットオフでの振幅 {}", peak);
     }
 }

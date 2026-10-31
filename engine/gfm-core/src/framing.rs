@@ -4,6 +4,15 @@ use crate::codec::BlockData;
 use crate::fec;
 use crate::layout::Layout;
 
+/// 仮数の各ビット（Layout の coef_items の並び）。pack と、通信路なしの復元（decoder::reconstruct_coeffs）が共有する
+pub fn coefficient_bits(lay: &Layout, bd: &BlockData) -> Vec<u8> {
+    let mut flat_mant: Vec<i64> = Vec::with_capacity(lay.n_coef);
+    for &(ch, k) in &lay.coef_groups {
+        flat_mant.extend(bd.mant[ch][k].as_ref().unwrap());
+    }
+    (0..lay.n_coef_bits()).map(|i| (((flat_mant[lay.coef_flat[i]] + lay.coef_offset_bits[i]) >> lay.coef_pos[i]) & 1) as u8).collect()
+}
+
 /// BlockData → 送信ビット列（n_tx 個、スクランブル前）
 pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u8> {
     let mut prot = lay.header_prefix(stream_id, counter);
@@ -13,13 +22,7 @@ pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u
     for &(ch, k, j) in &lay.attn_items {
         prot.push(bd.attn[ch][k].as_ref().unwrap()[j] as u8);
     }
-    let mut flat_mant: Vec<i64> = Vec::with_capacity(lay.n_coef);
-    for &(ch, k) in &lay.coef_groups {
-        flat_mant.extend(bd.mant[ch][k].as_ref().unwrap());
-    }
-    let coef: Vec<u8> = (0..lay.n_coef_bits())
-        .map(|i| (((flat_mant[lay.coef_flat[i]] + lay.coef_offset_bits[i]) >> lay.coef_pos[i]) & 1) as u8)
-        .collect();
+    let coef = coefficient_bits(lay, bd);
     let top: Vec<u8> = lay.top_coef_idx.iter().map(|&i| coef[i]).collect();
     let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| prot[i]).collect();
     core.extend(lay.core_top.iter().map(|&i| top[i]));
@@ -59,11 +62,11 @@ pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u
 
 // ---------------------------------------------------------------- 受信
 
-/// unpack の出力。protected_bits は FEC で訂正した保護ビット（上位 K bit）で、受信側が事後確率を確定値にするのに使う
+/// unpack の出力。top_bits は FEC で訂正した保護ビット（上位 K bit）で、受信側が事後確率を確定値にするのに使う
 pub struct Unpacked {
     pub bd: BlockData,
     pub high_ok: bool,
-    pub protected_bits: Vec<u8>,
+    pub top_bits: Vec<u8>,
 }
 
 fn val(bits: &[u8]) -> u64 {
@@ -126,7 +129,7 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8]) -> Option<Unpacked> {
         let b = p.bits(ch)[k];
         mant[ch][k] = Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b)).clamp(qmin_of(b), qmax_of(b))).collect());
     }
-    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, protected_bits: top })
+    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, top_bits: top })
 }
 
 pub const RECOVER_CANDIDATES: usize = 7;

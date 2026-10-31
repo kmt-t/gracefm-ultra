@@ -1,10 +1,10 @@
 //! 送信と受信の対称性: ノイズなしなら、Decoder(Encoder(x)) は原音を量子化誤差の範囲で再現する。欠落は品質コード 2 で報告される。
 
-use gfm_core::decoder::{to_float, Decoder};
+use gfm_core::decoder::Decoder;
 use gfm_core::encoder::Encoder;
 use gfm_core::profiles::profile_by_name;
 
-fn signal(n: usize, seed: u64) -> Vec<[i64; 2]> {
+fn signal(n: usize, seed: u64) -> Vec<[f64; 2]> {
     let mut s = seed;
     let mut rnd = || {
         s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -13,21 +13,24 @@ fn signal(n: usize, seed: u64) -> Vec<[i64; 2]> {
     (0..n)
         .map(|i| {
             let t = i as f64 / 32000.0;
-            let a = 0.3 * (2.0 * std::f64::consts::PI * 220.0 * t).sin() + 0.1 * (2.0 * std::f64::consts::PI * 3300.0 * t).sin() + 0.02 * rnd();
+            let a =
+                0.3 * (2.0 * std::f64::consts::PI * 220.0 * t).sin() + 0.1 * (2.0 * std::f64::consts::PI * 3300.0 * t).sin() + 0.02 * rnd();
             let b = 0.25 * (2.0 * std::f64::consts::PI * 330.0 * t).sin() + 0.02 * rnd();
-            [(a * 8388607.0) as i64, (b * 8388607.0) as i64]
+            [a, b]
         })
         .collect()
 }
 
-fn frames_of(p: &gfm_core::profiles::Profile, x: &[[i64; 2]]) -> Vec<Option<Vec<[f64; 2]>>> {
-    Encoder::new(p, 0, 0).unwrap().run(x).into_iter().map(|f| Some(to_float(&f))).collect()
+fn frames_of(p: &gfm_core::profiles::Profile, x: &[[f64; 2]]) -> Vec<Option<Vec<[f64; 2]>>> {
+    Encoder::new(p, 0, 0).unwrap().run(x).into_iter().map(Some).collect()
 }
 
 #[test]
 fn decoder_inverts_encoder() {
     // 各プロファイルの量子化だけの SNR の下限（dB、実測より 2 dB 下）。S を送らないプロファイルは、ステレオの原音との SNR が低くなる
-    for (name, min_snr) in [("B200", 47.5), ("M700", 38.0), ("SUB100", 12.5), ("SUB100-48K", 10.5), ("B200M", 1.5), ("M700M", 1.5), ("SUB50M", 1.0)] {
+    for (name, min_snr) in
+        [("B200", 47.5), ("M700", 38.0), ("SUB100", 12.5), ("SUB100-48K", 10.5), ("B200M", 1.5), ("M700M", 1.5), ("SUB50M", 1.0)]
+    {
         let p = profile_by_name(name).unwrap();
         let x = signal(64 * 60, 7);
         let frames = frames_of(&p, &x);
@@ -37,7 +40,7 @@ fn decoder_inverts_encoder() {
         let (mut sig, mut err) = (0f64, 0f64);
         for (o, r) in out.pcm.iter().zip(&x).skip(128) {
             for c in 0..2 {
-                let rv = r[c] as f64 / 8388608.0;
+                let rv = r[c];
                 sig += rv * rv;
                 err += (o[c] - rv) * (o[c] - rv);
             }
@@ -53,9 +56,8 @@ fn lost_frame_is_reported() {
     let x = signal(64 * 10, 3);
     let mut frames = frames_of(&p, &x);
     frames[4] = None;
-    let mut d = Decoder::new(&p).unwrap();
-    let out = d.run(&frames, x.len(), 0);
+    let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0);
     assert_eq!(out.quality[4], 2);
     assert!(!out.valid[4 * 64] && out.valid[3 * 64]);
-    assert_eq!(d.stats.lost, 1);
+    assert_eq!(out.stats.lost, 1);
 }

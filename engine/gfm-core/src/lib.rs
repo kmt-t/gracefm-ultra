@@ -1,7 +1,7 @@
 //! GraceFM の送信（符号化・フレーム化・変調、整数）と、Ultra の受信（復調・復号・出力段、浮動小数点）。送信の仕様は ../gracefm の Python 実装に合わせる。
+pub mod channel;
 pub mod codec;
 pub mod decoder;
-pub mod dsp;
 pub mod encoder;
 pub mod fec;
 pub mod framing;
@@ -11,6 +11,7 @@ pub mod iir;
 pub mod layout;
 pub mod modem;
 pub mod npz;
+pub mod pcm;
 pub mod plc;
 pub mod profiles;
 pub mod receiver;
