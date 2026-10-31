@@ -3,16 +3,12 @@
 //! 予測できるもの:
 //! - プロファイル ID、形式識別子、暗号化ビット: 既知
 //! - フレーム番号（16 bit）: 直前に復号できたフレームの番号 + 経過フレーム数
-//! - 指数（4 bit）: 直前に復号できたフレームの指数（近いほど確か）、副系がある場合は、副系で復号した同じブロックの係数のピーク
+//! - 指数（4 bit）: 直前に復号できたフレームの指数（近いほど確か）
 //!
 //! 事前の軟値が誤っていても、CRC が合わなければ採用されないので、誤ったヘッダを採ることはない（CRC の誤採用の確率は変わらない）。
 
-use crate::codec::quant::{exponent_for_peak, BlockData};
+use crate::codec::quant::BlockData;
 use crate::layout::Layout;
-use crate::profiles::MAX_BANDS;
-
-/// 帯域ごとの係数のピーク（絶対値の最大、満点 = 1.0）: [成分][帯域]。NaN は不明
-pub type Peaks = [[f64; MAX_BANDS]; 2];
 
 /// 事前知識の設定
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,14 +17,11 @@ pub struct PriorConfig {
     pub counter: bool,
     /// 直前のフレームの指数
     pub temporal: bool,
-    /// 副系のピークからの指数
-    pub sub: bool,
 }
 
 impl PriorConfig {
-    pub const NONE: PriorConfig = PriorConfig { counter: false, temporal: false, sub: false };
-    pub const TEMPORAL: PriorConfig = PriorConfig { counter: true, temporal: true, sub: false };
-    pub const FULL: PriorConfig = PriorConfig { counter: true, temporal: true, sub: true };
+    pub const NONE: PriorConfig = PriorConfig { counter: false, temporal: false };
+    pub const FULL: PriorConfig = PriorConfig { counter: true, temporal: true };
 }
 
 /// 既知のビットの事前の軟値の大きさ
@@ -37,8 +30,6 @@ const KNOWN: f64 = 12.0;
 const COUNTER: f64 = 6.0;
 /// 直前の復号から何フレームまで、番号・指数の予測を使うか
 const MAX_AGE: usize = 64;
-/// 副系のピークからの指数の予測の確率: 当たり、±1
-const SUB_HIT: f64 = 0.8;
 const PROB_FLOOR: f64 = 1e-3;
 const LLR_CLAMP: f64 = 12.0;
 
@@ -69,8 +60,8 @@ impl Tracker {
         }
     }
 
-    /// 位置 idx のフレームのヘッダの情報ビット（n_hdata 個）の事前の軟値（正 = 0 らしい）。hint: 副系のピーク
-    pub fn header_prior(&self, lay: &Layout, idx: usize, cfg: &PriorConfig, hint: Option<&Peaks>) -> Vec<f64> {
+    /// 位置 idx のフレームのヘッダの情報ビット（n_hdata 個）の事前の軟値（正 = 0 らしい）
+    pub fn header_prior(&self, lay: &Layout, idx: usize, cfg: &PriorConfig) -> Vec<f64> {
         let mut prior = vec![0.0; lay.n_hdata];
         let p = &lay.p;
         if cfg.counter {
@@ -89,22 +80,6 @@ impl Tracker {
                 if let Some((i0, e0)) = self.exps.get(ch).and_then(|v| v[k]).filter(|&(i0, _)| idx >= i0 && idx - i0 <= MAX_AGE) {
                     let scale = (0.5 + 0.1 * (idx - i0) as f64).min(3.0);
                     dist = Some((0..levels).map(|e| (-((e as i64 - e0).abs() as f64) / scale).exp() + PROB_FLOOR).collect());
-                }
-            }
-            if cfg.sub {
-                if let Some(peak) = hint.map(|h| h[ch][k]).filter(|v| v.is_finite()) {
-                    let hit = exponent_for_peak(peak, k, p.bits(ch)[k], p);
-                    let sub_dist: Vec<f64> = (0..levels)
-                        .map(|e| match (e as i64 - hit).abs() {
-                            0 => SUB_HIT,
-                            1 => (1.0 - SUB_HIT) / 2.0,
-                            _ => PROB_FLOOR,
-                        })
-                        .collect();
-                    dist = Some(match dist {
-                        Some(d) => d.iter().zip(&sub_dist).map(|(a, b)| a * b).collect(),
-                        None => sub_dist,
-                    });
                 }
             }
             if let Some(d) = dist {

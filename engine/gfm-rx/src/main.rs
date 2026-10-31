@@ -1,6 +1,6 @@
 //! 受信（デコーダ、浮動小数点）。使い方:
-//!   gfm-rx --profile B200 [--profile-b SUB100] --frames-a a.sym [--frames-b b.sym] --n N [--offset-b K] [--prior none|temporal|full] --out out.raw [--quality q.txt]
-//! --prior: ヘッダの事前知識（既定 full）。none: 通信路の軟値だけ。temporal: フレーム番号と直前の指数。full: さらに副系のピークからの指数
+//!   gfm-rx --profile B200 [--profile-b SUB100] --frames-a a.sym [--frames-b b.sym] --n N [--offset-b K] [--prior none|full] --out out.raw [--quality q.txt]
+//! --prior: ヘッダの事前知識（既定 full）。none: 通信路の軟値だけ。full: フレーム番号と直前の指数
 //! フレームファイル (.sym): u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 //! out.raw: L/R の交互の f32（満点 ±1）。
 
@@ -53,9 +53,8 @@ fn main() {
             "--prior" => {
                 cfg = match next.as_str() {
                     "none" => PriorConfig::NONE,
-                    "temporal" => PriorConfig::TEMPORAL,
                     "full" => PriorConfig::FULL,
-                    v => panic!("--prior は none / temporal / full: {}", v),
+                    v => panic!("--prior は none / full: {}", v),
                 }
             }
             a => panic!("不明な引数: {}", a),

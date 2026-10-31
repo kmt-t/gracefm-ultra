@@ -8,7 +8,7 @@ use crate::codec::BlockData;
 use crate::framing::{coefficient_bits, unpack_recovering, UnpackPrior};
 use crate::layout::Layout;
 use crate::modem::{Modem, N_PREAMBLE};
-use crate::prior::{Peaks, PriorConfig, Tracker};
+use crate::prior::{PriorConfig, Tracker};
 use crate::profiles::{Profile, MAX_BANDS};
 use crate::scrambler::Scrambler;
 
@@ -48,8 +48,6 @@ pub struct DecodedFrame {
     pub quality: i64,
     /// 半ブロックごと・成分・帯域の誤差分散。届かない・CRC 不一致は None
     pub rb: Option<[Rb; 2]>,
-    /// 復号した係数の、成分・帯域ごとのピーク（絶対値の最大）。復号していない帯域は NaN。副系のヘッダ予測に使う
-    pub peaks: Option<Peaks>,
     /// ヘッダのフレーム番号と、BlockData（基本 CRC が通ったとき）。次のフレームのヘッダの予測に使う
     pub header: Option<(u64, BlockData)>,
 }
@@ -71,8 +69,6 @@ pub struct StreamResult {
     pub quality: Vec<i64>,
     /// 時刻合わせ済みの、サンプルごとの誤差分散 [成分][帯域]
     pub rb: Vec<Rb>,
-    /// フレームごとの、復号した係数のピーク（時刻合わせ前）
-    pub peaks: Vec<Option<Peaks>>,
     pub stats: Stats,
 }
 
@@ -160,7 +156,7 @@ impl Decoder {
     }
 
     fn missing(&self, status: Status) -> DecodedFrame {
-        DecodedFrame { pcm: vec![[0.0, 0.0]; self.p.block], status, quality: QUALITY_MISSING, rb: None, peaks: None, header: None }
+        DecodedFrame { pcm: vec![[0.0, 0.0]; self.p.block], status, quality: QUALITY_MISSING, rb: None, header: None }
     }
 
     /// 1 フレームの受信シンボル（プリアンブル込み、±1 = 1.0。届かなければ None）→ 復号結果。返り値の 2 つ目は Chase 救済で反転した bit の数。
@@ -189,29 +185,13 @@ impl Decoder {
             (Status::HighFail, QUALITY_HIGH_MISSING)
         };
         let (coef, rb) = soft_coeffs(lay, &u.bd, &p1, u.high_ok);
-        let mut peaks = [[f64::NAN; MAX_BANDS]; 2];
-        for (ch, bands) in coef.iter().enumerate() {
-            for (k, band) in bands.iter().enumerate() {
-                if self.p.bits(ch)[k] > 0 && (k < self.p.high_k() || u.high_ok) {
-                    peaks[ch][k] = band.iter().fold(0f64, |a, v| a.max(v.abs()));
-                }
-            }
-        }
-        let frame =
-            DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), peaks: Some(peaks), header: Some((u.counter, u.bd)) };
+        let frame = DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), header: Some((u.counter, u.bd)) };
         (frame, recovered)
     }
 
     /// frames: フレームごとのシンボル（届かなければ None）。返り値は、offset サンプル目から n サンプル。
-    /// cfg: ヘッダの事前知識の設定。hints: フレームごとの副系のピーク（cfg.sub のとき。主系と同じフレーム格子）
-    pub fn run(
-        &self,
-        frames: &[Option<Vec<[f64; 2]>>],
-        n: usize,
-        offset: usize,
-        cfg: &PriorConfig,
-        hints: Option<&[Option<Peaks>]>,
-    ) -> StreamResult {
+    /// cfg: ヘッダの事前知識の設定
+    pub fn run(&self, frames: &[Option<Vec<[f64; 2]>>], n: usize, offset: usize, cfg: &PriorConfig) -> StreamResult {
         let b = self.p.block;
         let h = b / 2;
         let nf = frames.len();
@@ -220,16 +200,13 @@ impl Decoder {
         let mut rb = vec![[[f64::INFINITY; MAX_BANDS]; 2]; nf * b];
         let mut quality = vec![0; nf];
         let mut stats = Stats { frames: nf, ..Stats::default() };
-        let mut peaks = Vec::with_capacity(nf);
         let mut tracker = Tracker::new();
         for (i, f) in frames.iter().enumerate() {
-            let hint = hints.and_then(|h| h.get(i)).and_then(|h| h.as_ref());
-            let prior = (cfg.counter || cfg.temporal || cfg.sub).then(|| tracker.header_prior(&self.lay, i, cfg, hint));
+            let prior = (cfg.counter || cfg.temporal).then(|| tracker.header_prior(&self.lay, i, cfg));
             let (d, recovered) = self.decode_frame(f.as_deref(), &UnpackPrior { header: prior.as_deref(), top: None });
             if let Some((counter, bd)) = &d.header {
                 tracker.observe(i, *counter, bd);
             }
-            peaks.push(d.peaks);
             pcm[i * b..(i + 1) * b].copy_from_slice(&d.pcm);
             for t in 0..b {
                 valid[i * b + t] = d.valid();
@@ -251,13 +228,6 @@ impl Decoder {
         }
         let end = (offset + n).min(pcm.len());
         let start = offset.min(end);
-        StreamResult {
-            pcm: pcm[start..end].to_vec(),
-            valid: valid[start..end].to_vec(),
-            quality,
-            rb: rb[start..end].to_vec(),
-            peaks,
-            stats,
-        }
+        StreamResult { pcm: pcm[start..end].to_vec(), valid: valid[start..end].to_vec(), quality, rb: rb[start..end].to_vec(), stats }
     }
 }
