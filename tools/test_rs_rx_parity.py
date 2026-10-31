@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Rust のデコーダ (engine/gfm-rx) が、GraceFM の Python 実装 (gracefm.receiver.receive) と完全に一致することを確かめる。
-送信 (Python の Encoder) → 通信路 (雑音・フェージング・フレーム欠落) → 受信を、Python と Rust で行い、出力の PCM と品質コードを比べる。
+Rust のデコーダ (engine/gfm-rx) が、GraceFM の Python 実装 (gracefm.txrx.receive) と完全に一致することを確かめる。
+送信 (Python の Transmitter) → 通信路 (雑音・フェージング・フレーム欠落) → 受信を、Python と Rust で行い、出力の PCM と品質コードを比べる。
 受信は整数演算だけなので、完全一致するはず。
 
   .venv/bin/python tools/test_rs_rx_parity.py [--seconds 1.0] [--only B200+SUB100]
@@ -20,8 +20,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.rx import GRACEFM  # noqa: E402,F401
 from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm.encoder import Encoder  # noqa: E402
-from gracefm.receiver import receive  # noqa: E402
+from gracefm.txrx import Transmitter, receive  # noqa: E402
 from gracefm_ultra.channels import loss_mask  # noqa: E402
 from prep_haarnet import clip_pcm  # noqa: E402
 
@@ -63,13 +62,13 @@ def run_case(case, x, seed):
     main, sub, e_a, e_b, kind, loss, off = case
     pm, ps = PROFILES[main], (PROFILES[sub] if sub else None)
     rng = np.random.default_rng(seed)
-    fa = Encoder(pm, 0, 0).run(x)
+    fa = Transmitter(pm, 0, 0).run(x)
     fa = chan.through(fa, e_a, chan.fading_gains(len(fa), kind, np.random.default_rng(seed + 1)), rng)
     mk = loss_mask(len(fa), loss, 4, np.random.default_rng(seed + 2))
     fa = [None if m else f for f, m in zip(fa, mk)]
     fb = None
     if ps:
-        fb = Encoder(ps, 1, off).run(x)
+        fb = Transmitter(ps, 1, off).run(x)
         fb = chan.through(fb, e_b, chan.fading_gains(len(fb), kind, np.random.default_rng(seed + 3)), rng)
         mk = loss_mask(len(fb), loss, 4, np.random.default_rng(seed + 4))
         fb = [None if m else f for f, m in zip(fb, mk)]

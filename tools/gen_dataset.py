@@ -30,8 +30,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 
 from gracefm import channel as chan, framing, modem  # noqa: E402
-from gracefm.codec import encode_block, haar_forward  # noqa: E402
-from gracefm.decoder import reconstruct_coeffs  # noqa: E402
+from gracefm.codec import decode_coeffs, encode_block, haar_forward  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
@@ -81,7 +80,7 @@ def make_clip(args):
         buf[: len(bt)] = bt
         buf ^= modem.prbs(len(buf))
         sym.append(modem.modulate(buf, len(buf) // modem.bits_per_symbol(p.modulation), p.modulation, p.alpha))
-        co = reconstruct_coeffs(bd, p)
+        co = decode_coeffs(bd, p)
         ms = {"M": (blk[:, 0] + blk[:, 1] + 2) >> 2, "S": (blk[:, 0] - blk[:, 1] + 2) >> 2}
         for ci, ch in enumerate(("M", "S")):
             coef[i, ci] = np.concatenate(co[ch])
