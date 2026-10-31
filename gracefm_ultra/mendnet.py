@@ -1,7 +1,7 @@
 """
-MendNet (欠落フレームの補間): Haar 係数のフレーム列 (WIN フレーム = 200 ms @32 kHz) と欠落マスクから、
-欠落フレームの係数を非因果に予測する。Haar は直交なので、係数領域の誤差エネルギーは時間領域と同じ。
-ONNX に出せる演算 (Conv1d, GELU, GroupNorm) だけで組む。入力の形は固定 (1, 65, WIN)。
+MendNet (使えないフレームの補間): 融合後の Haar 係数のフレーム列 (WIN フレーム) と、フレームの状態・誤差分散・ヘッダの信頼度から、
+使えない (壊れた・欠落) フレームの係数を非因果に予測する。入力の定義は docs/MENDNET.md。
+Haar は直交なので、係数領域の誤差エネルギーは時間領域と同じ。ONNX に出せる演算 (Conv1d, GELU, GroupNorm) だけで組む。
 """
 import numpy as np
 import torch
@@ -36,11 +36,16 @@ def haar_inv(c):
     return a
 
 
+C_IN = 74
+GAP_SCALE = 8.0
+FLOOR = 0.05
+
+
 class MendNet(nn.Module):
-    def __init__(self, ch=192, blocks=12):
+    def __init__(self, c_in=C_IN, ch=192, blocks=12):
         super().__init__()
         dil = [1, 2, 4, 8, 16, 32]
-        self.inp = nn.Conv1d(65, ch, 1)
+        self.inp = nn.Conv1d(c_in, ch, 1)
         self.norms = nn.ModuleList([nn.GroupNorm(1, ch) for _ in range(blocks)])
         self.c1 = nn.ModuleList([nn.Conv1d(ch, ch, 3, dilation=dil[i % 6], padding=dil[i % 6]) for i in range(blocks)])
         self.c2 = nn.ModuleList([nn.Conv1d(ch, ch, 1) for _ in range(blocks)])
@@ -56,52 +61,53 @@ class MendNet(nn.Module):
         return self.out(h)
 
 
-def prepare(coef, known):
-    """coef: (WIN, 64) 係数、known: (WIN,) bool → (入力 (65, WIN), 帯域ごとの尺度 sigma (5,))。
-    尺度 = 既知フレームの帯域ごとの rms。欠落フレームは 0 にして、マスクを 1 チャンネル足す"""
-    k = np.asarray(known, bool)
-    sig = np.array([np.sqrt(np.mean(coef[k][:, BAND == b] ** 2)) if k.any() else 1.0 for b in range(5)]) + 1e-9
-    z = np.where(k[:, None], coef / sig[BAND][None, :], 0.0)
-    return np.concatenate([z.T, k[None, :].astype(float)], 0).astype(np.float32), sig
+def build_input(coef, var, status, gap, comp):
+    """MendNet の入力 v1 (74 チャンネル)。バッチ B、フレーム T、成分 1 つ。
+    coef (B,T,64) 融合後の係数、var (B,T,5) 誤差分散 (情報なしは負)、status (B,T) 0/1 = 使える (1 = 高域欠落)・2 = 壊れた・3 = 欠落、
+    gap (B,T) 段 A' の gap、comp (B,) 成分 (M = 0、S = 1)。
+    → (x (B,74,T), sigma (B,5) 帯域ごとの尺度, usable (B,T) bool)"""
+    band = torch.from_numpy(BAND).to(coef.device)
+    usable = status <= 1
+    have = (var >= 0) & usable[:, :, None]                                   # (B,T,5) 帯域ごとに値がある
+    have64 = have[:, :, band]
+    cnt = have64.sum(1).clamp_min(1)                                         # (B,64)
+    e = ((coef * have64) ** 2).sum(1) / cnt                                  # 係数ごとの平均電力
+    sig = torch.stack([e[:, band == k].mean(1) for k in range(5)], 1).sqrt()
+    sig = torch.where(have.any(1), sig, torch.ones_like(sig)).clamp_min(1e-9)   # (B,5)
+    v = coef / sig[:, band][:, None, :] * have64
+    r = torch.log2(var.clamp_min(1e-30) / sig[:, None, :] ** 2) / 16
+    r = torch.where(have, r.clamp(-1, 0.5), torch.full_like(r, 0.5))
+    s = torch.stack([usable.float(), (status == 2).float(), (status == 3).float()], -1)
+    g = (1 - (gap / GAP_SCALE).clamp(0, 1)) * (status <= 2)
+    c = comp.float()[:, None].expand(-1, coef.shape[1])
+    x = torch.cat([v, r, s, g[:, :, None], c[:, :, None]], -1)
+    return x.transpose(1, 2).contiguous(), sig, usable
 
 
-def edge_blend(est, ar, xfade):
-    """欠落区間の両端 xfade サンプルで、補間 est を AR 両側補間 ar (境界で必ず連続する) へ余弦窓で寄せる。
-    区間の中身は est のまま。境界の不連続 (広帯域の「ざっ」という雑音) を抑える"""
-    g = len(est)
-    n = min(int(xfade), g // 2)
-    if n <= 0:
-        return est
-    ramp = 0.5 * (1 + np.cos(np.pi * np.arange(n) / n))
-    w = np.zeros(g)
-    w[:n] = ramp
-    w[g - n:] = np.maximum(w[g - n:], ramp[::-1])
-    return w * ar + (1 - w) * est
+def compose(y, coef, sig, usable):
+    """出力 y (B,64,T) を係数に戻す。使えるフレームは復号した値、使えないフレームは y × sigma"""
+    band = torch.from_numpy(BAND).to(y.device)
+    est = y.transpose(1, 2) * sig[:, band][:, None, :]
+    return torch.where(usable[:, :, None], coef, est)
 
 
-def load_predictor(path, xfade=96):
-    """eval_plc.py 用: fn(x, a, b) → x[a:b] の予測 (x は 1 次元の時間信号、a, b は 64 の倍数)。
-    xfade: 両端のクロスフェード長 [サンプル] (32 kHz で 96 = 3 ms)。0 なら無し"""
-    from .plc_ar import interpolate
-
-    ck = torch.load(path, map_location="cpu")
-    net = MendNet(**ck["cfg"])
-    net.load_state_dict(ck["model"])
-    net.eval()
-
-    def fn(x, a, b):
-        n = len(x) // BLOCK
-        fa, fb = a // BLOCK, b // BLOCK
-        s = int(np.clip(fa - (WIN - (fb - fa)) // 2, 0, max(n - WIN, 0)))
-        coef = haar_fwd(np.asarray(x[s * BLOCK:(s + WIN) * BLOCK], float).reshape(WIN, BLOCK))
-        known = np.ones(WIN, bool)
-        known[fa - s:fb - s] = False
-        inp, sig = prepare(coef, known)
-        with torch.no_grad():
-            y = net(torch.from_numpy(inp)[None])[0].numpy().T          # (WIN, 64) 正規化済み
-        est = haar_inv(y[fa - s:fb - s] * sig[BAND][None, :]).reshape(-1)
-        if xfade:
-            est = edge_blend(est, interpolate(np.asarray(x, float), a, b), xfade)
-        return est
-
-    return fn
+def mend_loss(y, target, sig, usable, coef, edge=0.1):
+    """target (B,T,64) 原音の係数。使えないフレームの帯域ごとの相対二乗誤差 + 使えないフレームに接する変化量の誤差。
+    → (損失 (B,), 帯域ごとの相対誤差 (B,5))"""
+    band = torch.from_numpy(BAND).to(y.device)
+    bad = (~usable).float()[:, :, None]
+    t = target / sig[:, band][:, None, :]
+    yn = y.transpose(1, 2)
+    d = ((yn - t) ** 2 * bad)
+    ref = (t ** 2 * bad)
+    rel = []
+    for k in range(5):
+        m = band == k
+        n = bad.sum(1)[:, 0] * int(m.sum())
+        rel.append(d[:, :, m].sum((1, 2)) / (ref[:, :, m].sum((1, 2)) + FLOOR * n).clamp_min(1e-9))
+    rel = torch.stack(rel, 1)
+    v = torch.where(usable[:, :, None], coef / sig[:, band][:, None, :], yn)
+    dv, dt = v[:, 1:] - v[:, :-1], t[:, 1:] - t[:, :-1]
+    touch = ((~usable[:, 1:]) | (~usable[:, :-1])).float()[:, :, None]
+    cont = (((dv - dt) ** 2) * touch).sum((1, 2)) / ((dt ** 2 * touch).sum((1, 2)) + FLOOR * touch.sum((1, 2)) * 64).clamp_min(1e-9)
+    return rel.mean(1) + edge * cont, rel
