@@ -18,7 +18,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from materials import MATERIALS, load  # noqa: E402
 from gracefm_ultra.gfm import GRACEFM  # noqa: E402,F401
-from gracefm.decoder import roundtrip  # noqa: E402
+import rs  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
@@ -37,9 +37,9 @@ def main():
     for mat in MATERIALS:
         x = load(mat, a.seconds)
         xi = wavio.to_pcm24(x)
-        y = roundtrip(xi, p)
+        y = rs.roundtrip(a.profile, xi)
         ref = xi.astype(float) / (1 << 23)
-        err = (y.astype(float) - xi.astype(float)) / (1 << 23)
+        err = y - ref
         cells = []
         for lo, hi in BANDS:
             P_r = P_e = 0.0

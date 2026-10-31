@@ -21,7 +21,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from materials import load  # noqa: E402
 from gracefm_ultra.gfm import GRACEFM  # noqa: E402,F401
-from gracefm.decoder import roundtrip  # noqa: E402
+import rs  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
@@ -38,7 +38,7 @@ def main():
     p = PROFILES[a.profile]
     x = load(a.material, a.seconds)
     xi = wavio.to_pcm24(x)
-    y = roundtrip(xi, p).astype(float) / (1 << 23)
+    y = rs.roundtrip(a.profile, xi)
     ref = xi.astype(float) / (1 << 23)
     err = y - ref
     m_ref, m_err = ref.mean(1), err.mean(1)                                       # 左右の平均で描く

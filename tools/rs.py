@@ -72,3 +72,28 @@ def rx(profile, frames_a, n, frames_b=None, profile_b=None, offset_b=0):
         y = np.fromfile(o, "<f4").reshape(-1, 2).astype(np.float64)
         quality = np.array([int(v) for v in open(q).read().split()])
         return y, quality, r.stderr.strip()
+
+
+def gen(profile, pcm24, scen, seed=1, threads=1):
+    """HaarNet の学習データと同じ形式（gfm-gen の .npz）を 1 つのシナリオぶん作って読む。同じ seed・シナリオなら、gfm-tx と同じ通信路の実現になる"""
+    import numpy as _np
+    with tempfile.TemporaryDirectory() as d:
+        raw, out = os.path.join(d, "x.raw"), os.path.join(d, "o.npz")
+        write_pcm(raw, pcm24)
+        cmd = [os.path.join(BIN, "gfm-gen"), "--profile", profile, "--pcm", raw, "--seed", str(seed), "--threads", str(threads), "--out", out,
+               "--scen", ",".join(str(float(v)) for v in scen)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode:
+            raise RuntimeError(r.stderr[-400:])
+        with _np.load(out) as z:
+            return {k: z[k] for k in z.files}
+
+
+def roundtrip(profile, pcm24):
+    """通信路なしの符号化と復号（量子化だけの誤差）。Rust の送信と受信を、ほぼ雑音のない通信路（Es/N0 = 60 dB）でつなぐ。
+    返り値: 出力段の遅延を補償した音声 (n, 2)（満点 ±1）"""
+    n = len(pcm24)
+    frames = tx(profile, pcm24, scen=(60.0, 0, 0.0, 1.0), seed=1)
+    y, _, _ = rx(profile, frames, n)
+    delay = 3 if profile in ("B200", "B200M", "SUB100", "SUB50M", "B200MY", "B200Y") else 5
+    return np.concatenate([y[delay:], np.zeros((delay, 2))])

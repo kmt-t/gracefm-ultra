@@ -22,14 +22,12 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
-from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm.encoder import Encoder  # noqa: E402
 from gracefm.receiver import receive  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta, soft_e0  # noqa: E402
 from gracefm_ultra.plcnet import haar_inv  # noqa: E402
-from ref import steps_of  # noqa: E402
+import rs  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 
@@ -91,17 +89,12 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     sf.write(os.path.join(a.out, f"{a.tag}_original.wav"), ref, p.fs, subtype="PCM_24")
     nfr = n // 64
-    step = steps_of(p, lay, xi[:n], nfr)
     npz_like = {"pos": lay.coef_pos, "coef_of_bit": lay.coef_flat, "group": None}
     # group (成分, 帯域) の番号 (hn_index.dataset_index と同じ並び)
     from hn_index import dataset_index
     _, group = dataset_index(p, lay)
     npz_like["group"] = group
     meta = make_meta(npz_like, p)
-    frames = Encoder(p, 0, 0).run(xi[:n])
-    scr = modem.prbs(lay.n_tx)
-    n_pre = modem.N_PREAMBLE
-    nsym = modem.n_symbols(lay.n_tx, lay.n_strong, p.modulation)
     ref48 = [wavio.resample(ref[:, c], p.fs, 48000) for c in (0, 1)]
 
     def score(y):
@@ -113,19 +106,17 @@ def main():
     print(f"B200 ステレオ {a.seconds}s。SNR [dB] / ViSQOL (出力: {os.path.abspath(a.out)})\n")
     print(f"{'Es/N0':>6}{'gfm(現行)':>16}{'e0':>16}{'ultra':>16}{'ultra_M':>16}")
     for e in [float(v) for v in a.esn0.split(",")]:
-        rng = np.random.default_rng(1)
-        rx = [chan.adc(chan.awgn(f / float(1 << modem.SYM_FRAC), e, rng)) for f in frames]
-        y_g, _ = receive(p, rx, None, n, 0)
+        scen = (e, 0, 0.0, 1.0)
+        frames = rs.tx("B200", xi[:n], scen=scen, seed=1)                  # 送信と通信路は Rust
+        y_g, _ = receive(p, rs.to_q22(frames), None, n, 0)                 # 現行の受信（本家）
         y_g = wavio.from_pcm24(y_g)
         lags = range(-8, 9)                                                  # 現行受信機は、IIR 切り替え用に出力を数サンプル遅らせている。整数遅れを補償
         best = max(lags, key=lambda L: float(np.sum(ref[16:-16] * np.roll(y_g, L, axis=0)[16:-16])))
         y_g = np.roll(y_g, best, axis=0)
         print(f"  (gfm の出力の遅れ: {-best} サンプル、補償済み)", flush=True)
-        llrs, vars_ = [], []
-        for sym in rx:
-            l, _, v = modem.demodulate(sym[n_pre:n_pre + nsym], lay.n_tx, p.modulation, p.alpha)
-            llrs.append(np.where(scr == 1, -l, l)[lay.coef_stream_idx]); vars_.append(v)
-        e0, est = infer(net, meta, np.array(llrs), step, np.array(vars_, float))
+        data = rs.gen("B200", xi[:n], scen, seed=1)                        # 同じ通信路の実現の LLR・刻み・雑音分散
+        llrs, step, vars_ = data["llr"][0].astype(np.int64), data["step"], data["var"][0].astype(float)
+        e0, est = infer(net, meta, llrs, step, vars_)
         est_m = est.copy()
         est_m[:, 64:] = e0[:, 64:]                                          # S は e0 のまま
         outs = {"gfm": y_g, "e0": to_lr(e0, nfr), "ultra": to_lr(est, nfr), "ultra_M": to_lr(est_m, nfr)}
