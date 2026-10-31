@@ -3,10 +3,11 @@
 use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
 
-use crate::codec::{decode_coeffs, encode_block, exp_range, haar_forward, FRAC};
-use crate::framing::pack;
+use crate::codec::{analyze, dequantize_hard, exp_range, FRAC};
+use crate::encoder::Encoder;
 use crate::layout::Layout;
-use crate::modem::{prbs, Modem, N_PREAMBLE, SYM_FRAC};
+use crate::modem::{Modem, N_PREAMBLE, SYM_FRAC};
+use crate::scrambler::Scrambler;
 use crate::npz::{write_npz, Npy};
 use crate::profiles::Profile;
 
@@ -126,7 +127,8 @@ pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, thread
     let nsym = modem.n_symbols(lay.n_tx, lay.n_strong);
     let nfr = pcm.len() / p.block;
     let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
-    let scr = prbs(nsym * bps);
+    let scr = Scrambler::new(nsym * bps);
+    let mut enc = Encoder::new(p, 0, 0)?;
 
     let mut bits = vec![0u8; nfr * nbit];
     let mut step = vec![0f32; nfr * ncoef];
@@ -136,29 +138,20 @@ pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, thread
     let mut syms: Vec<Vec<[i64; 2]>> = Vec::with_capacity(nfr);
     for i in 0..nfr {
         let blk = &pcm[i * p.block..(i + 1) * p.block];
-        let bd = encode_block(blk, p, true);
-        let stream = pack(&lay, &bd, 0, i as u64);
-        let mut buf = vec![0u8; nsym * bps];
-        buf[..lay.n_tx].copy_from_slice(&stream);
-        for (b, s) in buf.iter_mut().zip(&scr) {
-            *b ^= *s;
-        }
-        syms.push(modem.modulate(&buf, nsym));
+        let (bd, stream, sym) = enc.encode_frame_parts(blk);
+        syms.push(sym);
         for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
             bits[i * nbit + j] = stream[idx];
         }
         if full {
             bits_full[i * lay.n_tx..(i + 1) * lay.n_tx].copy_from_slice(&stream);
         }
-        let ms = [
-            blk.iter().map(|v| (v[0] + v[1] + 2) >> 2).collect::<Vec<_>>(),
-            blk.iter().map(|v| (v[0] - v[1] + 2) >> 2).collect::<Vec<_>>(),
-        ];
-        let dq = decode_coeffs(&bd, p);
+        let bands_all = analyze(blk, p);
+        let dq = dequantize_hard(&bd, p);
         for &(ch, k) in &lay.coef_groups {
             let o = lay.coef_offset[&(ch, k)];
             let b = p.bits(ch)[k];
-            let bands = haar_forward(&ms[ch], p.levels);
+            let bands = &bands_all[ch];
             let (emin, _) = exp_range(k, b, p);
             let s = bd.eidx[ch][k].unwrap() + emin + FRAC;
             let attn = bd.attn[ch][k].as_ref().unwrap();
@@ -195,7 +188,7 @@ pub fn generate(p: &Profile, pcm: &[[i64; 2]], scens: &[Scen], seed: u64, thread
                 let rx = awgn_adc(&syms[i][N_PREAMBLE..], e, &mut crng);
                 let (l, _, v) = modem.demodulate(&rx, lay.n_tx);
                 var[i] = v;
-                let fix = |q: usize| -> i8 { (if scr[q] == 1 { -l[q] } else { l[q] }).clamp(-127, 127) as i8 };
+                let fix = |q: usize| -> i8 { (if scr.sign(q) { -l[q] } else { l[q] }).clamp(-127, 127) as i8 };
                 for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
                     llr[i * nbit + j] = fix(idx);
                 }

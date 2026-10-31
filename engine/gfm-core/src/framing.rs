@@ -59,21 +59,19 @@ pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u
 
 // ---------------------------------------------------------------- 受信
 
-pub const RECOVER_CANDIDATES: usize = 7;
-pub const RECOVER_MAX_FLIPS: usize = 2;
-
-pub struct Header {
+/// unpack の出力。protected_bits は FEC で訂正した保護ビット（上位 K bit）で、受信側が事後確率を確定値にするのに使う
+pub struct Unpacked {
+    pub bd: BlockData,
     pub high_ok: bool,
-    pub top_bits: Vec<u8>,
-    pub recovered: usize,
+    pub protected_bits: Vec<u8>,
 }
 
 fn val(bits: &[u8]) -> u64 {
     bits.iter().fold(0u64, |a, &b| (a << 1) | b as u64)
 }
 
-/// soft: 送信ビット列全体の軟値（正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None
-pub fn unpack(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<(BlockData, Header)> {
+/// pack の逆。soft: 送信ビット列全体の軟値（正 = 0 らしい）、bits: 硬判定。基本 CRC が合わなければ None。純粋な関数
+pub fn unpack(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<Unpacked> {
     use crate::codec::{offset_of, qmax_of, qmin_of};
     let p = &lay.p;
     let pick = |idx: &[usize]| -> Vec<i64> { idx.iter().map(|&i| soft[i]).collect() };
@@ -128,51 +126,5 @@ pub fn unpack(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<(BlockData, Hea
         let b = p.bits(ch)[k];
         mant[ch][k] = Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b)).clamp(qmin_of(b), qmax_of(b))).collect());
     }
-    Some((BlockData { mant, eidx, attn }, Header { high_ok, top_bits: top, recovered: 0 }))
-}
-
-/// 基本 CRC が合わないとき、ヘッダの信頼度の低い bit を 1〜RECOVER_MAX_FLIPS 個反転して CRC が合う候補を探す（Chase 型）
-pub fn unpack_recovering(lay: &Layout, soft: &[i64], bits: &[u8]) -> Option<(BlockData, Header)> {
-    if let Some(r) = unpack(lay, soft, bits) {
-        return Some(r);
-    }
-    let mut hdr_idx: Vec<usize> = lay.hdata_idx.clone();
-    hdr_idx.extend(&lay.hpar_idx);
-    let mut order: Vec<usize> = (0..hdr_idx.len()).collect();
-    order.sort_by_key(|&i| soft[hdr_idx[i]].abs()); // 安定ソート
-    let cand: Vec<usize> = order.iter().take(RECOVER_CANDIDATES).map(|&i| hdr_idx[i]).collect();
-    for t in 1..=RECOVER_MAX_FLIPS {
-        let mut comb: Vec<usize> = (0..t).collect();
-        loop {
-            let mut s2 = soft.to_vec();
-            let mut b2 = bits.to_vec();
-            for &c in &comb {
-                let idx = cand[c];
-                s2[idx] = -s2[idx];
-                b2[idx] ^= 1;
-            }
-            if let Some((bd, mut h)) = unpack(lay, &s2, &b2) {
-                h.recovered = t;
-                return Some((bd, h));
-            }
-            // 次の組み合わせ（辞書順）
-            let mut i = t;
-            let mut done = true;
-            while i > 0 {
-                i -= 1;
-                if comb[i] != i + cand.len() - t {
-                    comb[i] += 1;
-                    for j in i + 1..t {
-                        comb[j] = comb[j - 1] + 1;
-                    }
-                    done = false;
-                    break;
-                }
-            }
-            if done {
-                break;
-            }
-        }
-    }
-    None
+    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, protected_bits: top })
 }

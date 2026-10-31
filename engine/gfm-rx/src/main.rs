@@ -4,7 +4,7 @@
 //! out.raw: L/R の交互の i32（符号つき 24 bit PCM）。
 
 use gfm_core::profiles::profile_by_name;
-use gfm_core::rx::receive;
+use gfm_core::receiver::receive;
 
 fn read_sym(path: &str) -> Vec<Option<Vec<[i64; 2]>>> {
     let d = std::fs::read(path).unwrap_or_else(|_| panic!("{} を読めません", path));

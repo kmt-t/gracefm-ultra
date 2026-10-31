@@ -1,9 +1,9 @@
 //! 2 系統の融合（帯域ごとの逆分散重み）。GraceFM `gracefm/fusion.py` の移植。
 
+use crate::codec::quant::INF_LOG;
 use crate::codec::{haar_forward, haar_inverse, ms_to_lr};
 use crate::dsp::inv1p2pow_q15;
 
-pub const INF_LOG: i64 = 1 << 40;
 const HALF: i64 = 1 << 14;
 const ONE: i64 = 1 << 15;
 
