@@ -20,7 +20,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
+from gracefm_ultra.haarnet import WIN, build_net, unet_cfg, features, haar_matrix, make_meta  # noqa: E402
 
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
@@ -132,6 +132,8 @@ def main():
     ap.add_argument("--bs", type=int, default=64)
     ap.add_argument("--ch", type=int, default=192)
     ap.add_argument("--blocks", type=int, default=10)
+    ap.add_argument("--arch", default="lite", choices=["lite", "unet"], help="lite: 飛び幅つき畳み込みの TCN、unet: 帯域方向の U-Net (各帯域の特徴量を横から入れる)")
+    ap.add_argument("--widths", default="", help="unet の段ごとのチャンネル数 (細かい帯域から、カンマ区切り)")
     ap.add_argument("--cpu", action="store_true", help="GPU があっても CPU で学習する")
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", default="")
@@ -151,8 +153,11 @@ def main():
     from gracefm.layout import Layout
     _cidx, _ = dataset_index(PROFILES[a.profile], Layout(PROFILES[a.profile]))
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
-    cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=a.ch, blocks=a.blocks)
-    net = HaarNetLite(**cfg).to(dev)
+    if a.arch == "unet":
+        cfg = unet_cfg(meta, [int(v) for v in a.widths.split(",")] if a.widths else None)
+    else:
+        cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=a.ch, blocks=a.blocks)
+    net = build_net(cfg).to(dev)
     meta.to(dev)
     set_cidx(_cidx, dev)
     print(f"device {dev}" + (f" ({torch.cuda.get_device_name(0)})" if dev.type == "cuda" else ""), flush=True)

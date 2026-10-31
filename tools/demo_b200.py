@@ -26,7 +26,7 @@ from gracefm import channel as chan, modem  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm.txrx import Transmitter, receive  # noqa: E402
-from gracefm_ultra.haarnet import WIN, HaarNetLite, features, make_meta, soft_e0  # noqa: E402
+from gracefm_ultra.haarnet import WIN, build_net, features, make_meta, soft_e0  # noqa: E402
 from gracefm_ultra.plcnet import haar_inv  # noqa: E402
 from prep_haarnet import steps_of  # noqa: E402
 from tools.common import wavio  # noqa: E402
@@ -80,7 +80,7 @@ def main():
     p = PROFILES["B200"]
     lay = Layout(p)
     ck = torch.load(a.ckpt, map_location="cpu")
-    net = HaarNetLite(**ck["cfg"]).eval()
+    net = build_net(ck["cfg"]).eval()
     net.load_state_dict(ck["model"])
     x, fs = wavio.read(a.audio)
     x = wavio.resample(x, fs, p.fs)[int(a.start * p.fs):int((a.start + a.seconds) * p.fs)] * 0.5

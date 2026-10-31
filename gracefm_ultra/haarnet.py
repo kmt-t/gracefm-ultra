@@ -14,7 +14,10 @@ WIN = 64
 class Meta:
     """bit 属性 (prep_haarnet.py が保存) から、LLR → 係数の事後平均・分散への写像を作る"""
 
-    def __init__(self, pos, coef_of_bit, group, offsets, qmin, qmax):
+    def __init__(self, pos, coef_of_bit, group, offsets, qmin, qmax, group_k=None):
+        self.group_k = None if group_k is None else [int(k) for k in group_k]      # 群 (成分, 帯域) ごとの帯域番号 k
+        self.coef_of_bit = np.asarray(coef_of_bit, np.int64)
+        self.group = np.asarray(group, np.int64)
         self.nbit = len(pos)
         self.ncoef = len(offsets)
         pw = 2.0 ** np.asarray(pos, np.float64)
@@ -92,6 +95,85 @@ class HaarNetLite(nn.Module):
         return self.out(h).transpose(1, 2)               # (B, T, ncoef)
 
 
+def unet_cfg(meta, widths=None):
+    """HaarNetUNet の設定。帯域 k ごとに、その帯域の bit・係数の特徴量の番号 (横入力) と出力する係数の番号を決める。
+    段は細かい帯域 (k 大) → 粗い帯域 (k 小) の順。widths は段ごとのチャンネル数 (既定は粗いほど太い)"""
+    nb, nc = meta.nbit, meta.ncoef
+    ks = sorted(set(meta.group_k), reverse=True)
+    gk = np.asarray(meta.group_k)
+    cgrp, bgrp = meta.group, meta.group[meta.coef_of_bit]
+    in_idx, out_idx = [], []
+    for k in ks:
+        c = np.where(gk[cgrp] == k)[0]
+        b = np.where(gk[bgrp] == k)[0]
+        in_idx.append([int(i) for i in np.concatenate([b, nb + c, nb + nc + c, nb + 2 * nc + c, [nb + 3 * nc, nb + 3 * nc + 1]])])
+        out_idx.append([int(i) for i in c])
+    if widths is None:
+        widths = np.linspace(96, 192, len(ks)).round().astype(int).tolist()
+    return dict(arch="unet", in_idx=in_idx, out_idx=out_idx, widths=[int(w) for w in widths], nc=nc)
+
+
+class _Block(nn.Module):
+    """正規化 → 3 点畳み込み (飛び幅 dil) → GELU → 1×1 畳み込み、入力を足す"""
+
+    def __init__(self, ch, dil):
+        super().__init__()
+        self.n = nn.GroupNorm(1, ch)
+        self.c1 = nn.Conv1d(ch, ch, 3, dilation=dil, padding=dil)
+        self.c2 = nn.Conv1d(ch, ch, 1)
+        self.act = nn.GELU()
+
+    def forward(self, h):
+        return h + self.c2(self.act(self.c1(self.n(h))))
+
+
+class HaarNetUNet(nn.Module):
+    """帯域方向の U-Net。各帯域の特徴量を、その帯域の段へ横から入れる。
+    下り: 細かい帯域 → 粗い帯域へ情報を集める。上り: 粗い帯域の結論を細かい帯域へ戻し、同じ帯域の下りの値をスキップで足す。
+    各段は時間方向 (フレーム) の畳み込みで、時間はダウンサンプルしない。最終層は 0 初期化 (学習前は E0 と同じ)"""
+
+    def __init__(self, in_idx, out_idx, widths, nc, **_):
+        super().__init__()
+        L = len(in_idx)
+        self.nc = nc
+        for j in range(L):
+            self.register_buffer(f"i{j}", torch.tensor(in_idx[j], dtype=torch.long))
+            self.register_buffer(f"o{j}", torch.tensor(out_idx[j], dtype=torch.long))
+        self.side = nn.ModuleList([nn.Conv1d(len(in_idx[j]), widths[j], 1) for j in range(L)])
+        self.down = nn.ModuleList([_Block(widths[j], 2 ** (j % 4)) for j in range(L)])
+        self.agg = nn.ModuleList([nn.Conv1d(widths[j - 1], widths[j], 1) for j in range(1, L)])        # 細かい → 粗い
+        self.back = nn.ModuleList([nn.Conv1d(widths[j + 1], widths[j], 1) for j in range(L - 1)])      # 粗い → 細かい
+        self.up = nn.ModuleList([_Block(widths[j], 2 ** ((j + 2) % 4)) for j in range(L)])
+        self.out = nn.ModuleList([nn.Conv1d(widths[j], len(out_idx[j]), 1) for j in range(L)])
+        for o in self.out:
+            nn.init.zeros_(o.weight)
+            nn.init.zeros_(o.bias)
+
+    def forward(self, x):
+        L = len(self.side)
+        d = []
+        for j in range(L):
+            h = self.side[j](x[:, getattr(self, f"i{j}")])
+            if j:
+                h = h + self.agg[j - 1](d[-1])
+            d.append(self.down[j](h))
+        y = [None] * L
+        y[L - 1] = self.up[L - 1](d[L - 1])
+        for j in range(L - 2, -1, -1):
+            y[j] = self.up[j](d[j] + self.back[j](y[j + 1]))
+        out = x.new_zeros(x.shape[0], self.nc, x.shape[2])
+        for j in range(L):
+            out[:, getattr(self, f"o{j}")] = self.out[j](y[j])
+        return out.transpose(1, 2)
+
+
+def build_net(cfg):
+    """チェックポイントの cfg から網を作る (arch がなければ旧来の HaarNetLite)"""
+    if cfg.get("arch") == "unet":
+        return HaarNetUNet(**cfg)
+    return HaarNetLite(**cfg)
+
+
 def make_meta(npz, profile):
     """prep_haarnet.py の出力 (npz) とプロファイルから Meta を作る"""
     from gracefm.codec import offset_of, qmax_of, qmin_of
@@ -104,4 +186,4 @@ def make_meta(npz, profile):
         offs += [offset_of(bits, profile, ch, k)] * n
         qmin += [qmin_of(bits, profile, ch, k)] * n
         qmax += [qmax_of(bits)] * n
-    return Meta(npz["pos"], npz["coef_of_bit"], npz["group"], offs, qmin, qmax)
+    return Meta(npz["pos"], npz["coef_of_bit"], npz["group"], offs, qmin, qmax, group_k=[k for (_, k) in lay.coef_offset])
