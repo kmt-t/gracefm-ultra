@@ -95,7 +95,7 @@ class HaarNetLite(nn.Module):
         return self.out(h).transpose(1, 2)               # (B, T, ncoef)
 
 
-def unet_cfg(meta, widths=None):
+def unet_cfg(meta, widths=None, rounds=1):
     """HaarNetUNet の設定。帯域 k ごとに、その帯域の bit・係数の特徴量の番号 (横入力) と出力する係数の番号を決める。
     段は細かい帯域 (k 大) → 粗い帯域 (k 小) の順。widths は段ごとのチャンネル数 (既定は粗いほど太い)"""
     nb, nc = meta.nbit, meta.ncoef
@@ -110,7 +110,7 @@ def unet_cfg(meta, widths=None):
         out_idx.append([int(i) for i in c])
     if widths is None:
         widths = np.linspace(96, 192, len(ks)).round().astype(int).tolist()
-    return dict(arch="unet", in_idx=in_idx, out_idx=out_idx, widths=[int(w) for w in widths], nc=nc)
+    return dict(arch="unet", in_idx=in_idx, out_idx=out_idx, widths=[int(w) for w in widths], nc=nc, nb=nb, rounds=int(rounds))
 
 
 class _Block(nn.Module):
@@ -132,10 +132,10 @@ class HaarNetUNet(nn.Module):
     下り: 細かい帯域 → 粗い帯域へ情報を集める。上り: 粗い帯域の結論を細かい帯域へ戻し、同じ帯域の下りの値をスキップで足す。
     各段は時間方向 (フレーム) の畳み込みで、時間はダウンサンプルしない。最終層は 0 初期化 (学習前は E0 と同じ)"""
 
-    def __init__(self, in_idx, out_idx, widths, nc, **_):
+    def __init__(self, in_idx, out_idx, widths, nc, nb=0, rounds=1, **_):
         super().__init__()
         L = len(in_idx)
-        self.nc = nc
+        self.nc, self.nb, self.rounds = nc, nb, rounds
         for j in range(L):
             self.register_buffer(f"i{j}", torch.tensor(in_idx[j], dtype=torch.long))
             self.register_buffer(f"o{j}", torch.tensor(out_idx[j], dtype=torch.long))
@@ -150,6 +150,16 @@ class HaarNetUNet(nn.Module):
             nn.init.zeros_(o.bias)
 
     def forward(self, x):
+        """rounds > 1: 往復を重みを共有して繰り返す。2 回目以降は、入力の E0 の位置に現在の推定 (E0 + 直し分) を戻し、その直し分を足していく。
+        下の層の推定が変われば上の層の辻褄が変わり、上の層から下の層の推定がまた変わる、という反復になる"""
+        nb, nc = self.nb, self.nc
+        corr = self._pass(x)
+        for _ in range(self.rounds - 1):
+            xr = torch.cat([x[:, :nb], x[:, nb:nb + nc] + corr, x[:, nb + nc:]], 1)
+            corr = corr + self._pass(xr)
+        return corr.transpose(1, 2)
+
+    def _pass(self, x):
         L = len(self.side)
         d = []
         for j in range(L):
@@ -164,7 +174,7 @@ class HaarNetUNet(nn.Module):
         out = x.new_zeros(x.shape[0], self.nc, x.shape[2])
         for j in range(L):
             out[:, getattr(self, f"o{j}")] = self.out[j](y[j])
-        return out.transpose(1, 2)
+        return out
 
 
 def build_net(cfg):

@@ -133,6 +133,7 @@ def main():
     ap.add_argument("--ch", type=int, default=192)
     ap.add_argument("--blocks", type=int, default=10)
     ap.add_argument("--arch", default="lite", choices=["lite", "unet"], help="lite: 飛び幅つき畳み込みの TCN、unet: 帯域方向の U-Net (各帯域の特徴量を横から入れる)")
+    ap.add_argument("--rounds", type=int, default=1, help="unet の往復回数 (重み共有で反復し、毎回 E0 の位置へ現在の推定を戻す)")
     ap.add_argument("--widths", default="", help="unet の段ごとのチャンネル数 (細かい帯域から、カンマ区切り)")
     ap.add_argument("--cpu", action="store_true", help="GPU があっても CPU で学習する")
     ap.add_argument("--lr", type=float, default=1e-3)
@@ -154,7 +155,7 @@ def main():
     _cidx, _ = dataset_index(PROFILES[a.profile], Layout(PROFILES[a.profile]))
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
     if a.arch == "unet":
-        cfg = unet_cfg(meta, [int(v) for v in a.widths.split(",")] if a.widths else None)
+        cfg = unet_cfg(meta, [int(v) for v in a.widths.split(",")] if a.widths else None, a.rounds)
     else:
         cfg = dict(nbit=meta.nbit, ncoef=meta.ncoef, ch=a.ch, blocks=a.blocks)
     net = build_net(cfg).to(dev)
