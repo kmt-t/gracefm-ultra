@@ -23,13 +23,13 @@ const VAR_UNIT: f64 = (1u64 << 32) as f64;
 const Q22: f64 = (1u64 << 22) as f64;
 
 /// 送信側の結果（シナリオに依らない）
-struct Transmitted {
-    bits: Vec<u8>,      // (F, nbit)
+pub(crate) struct Transmitted {
+    pub bits: Vec<u8>,  // (F, nbit)
     bits_full: Vec<u8>, // (F, n_tx)。full のときだけ
-    step: Vec<f32>,
+    pub step: Vec<f32>,
     coef0: Vec<f32>,
     coefq: Vec<f32>,
-    syms: Vec<Vec<[f64; 2]>>,
+    pub syms: Vec<Vec<[f64; 2]>>,
 }
 
 /// 1 つの通信路シナリオの受信結果
@@ -41,6 +41,47 @@ struct Received {
     var: Vec<i64>,
 }
 
+/// 仮数ビット・係数の属性（`pos` `coef_of_bit` `strong` `protected` `group`）
+pub(crate) struct BitAttrs {
+    pos: Vec<i64>,
+    coef_of_bit: Vec<i64>,
+    strong: Vec<u8>,
+    protected: Vec<u8>,
+    group: Vec<i64>,
+}
+
+impl BitAttrs {
+    pub(crate) fn new(p: &Profile, lay: &Layout) -> BitAttrs {
+        let mut protected = vec![0u8; lay.n_coef_bits()];
+        for &i in &lay.top_coef_idx {
+            protected[i] = 1;
+        }
+        let mut group = vec![0i64; lay.n_coef];
+        for (gi, &(ch, k)) in lay.coef_groups.iter().enumerate() {
+            let o = lay.coef_offset[&(ch, k)];
+            group[o..o + p.ncoef(k)].fill(gi as i64);
+        }
+        BitAttrs {
+            pos: lay.coef_pos.clone(),
+            coef_of_bit: lay.coef_flat.iter().map(|&v| v as i64).collect(),
+            strong: lay.coef_stream_idx.iter().map(|&i| (i < lay.n_strong) as u8).collect(),
+            protected,
+            group,
+        }
+    }
+
+    pub(crate) fn entries(&self) -> Vec<(&'static str, Npy)> {
+        let (nb, nc) = (self.pos.len(), self.group.len());
+        vec![
+            ("pos", Npy::i64(&self.pos, &[nb])),
+            ("coef_of_bit", Npy::i64(&self.coef_of_bit, &[nb])),
+            ("strong", Npy::u8(&self.strong, &[nb])),
+            ("protected", Npy::u8(&self.protected, &[nb])),
+            ("group", Npy::i64(&self.group, &[nc])),
+        ]
+    }
+}
+
 /// 生成した学習データ
 pub struct Dataset {
     pub nfr: usize,
@@ -50,14 +91,10 @@ pub struct Dataset {
     pub scens: Vec<Scen>,
     tx: Transmitted,
     rx: Vec<Received>,
-    pos: Vec<i64>,
-    coef_of_bit: Vec<i64>,
-    strong: Vec<u8>,
-    protected: Vec<u8>,
-    group: Vec<i64>,
+    attrs: BitAttrs,
 }
 
-fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) -> Result<Transmitted, String> {
+pub(crate) fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) -> Result<Transmitted, String> {
     let nfr = pcm.len() / p.block;
     let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
     let mut enc = Encoder::new(p, 0, 0)?;
@@ -95,6 +132,13 @@ fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) -> Result<T
     Ok(t)
 }
 
+/// 受信シンボル（プリアンブルつき）を復調して、スクランブルを戻した LLR（自然対数の 4 倍、±127 に飽和）を送信位置の順に返す。軸あたりの雑音分散も返す
+pub(crate) fn quantized_llr(lay: &Layout, modem: &Modem, scr: &Scrambler, rx: &[[f64; 2]]) -> (Vec<i8>, f64) {
+    let (llr, _, var) = modem.demodulate(&rx[N_PREAMBLE..], lay.n_tx);
+    let q = (0..lay.n_tx).map(|i| ((if scr.sign(i) { -llr[i] } else { llr[i] }) * LLR_SCALE).round().clamp(-127.0, 127.0) as i8).collect();
+    (q, var)
+}
+
 /// 受信側の共通の道具（全シナリオで共有する）
 struct Receiver<'a> {
     lay: &'a Layout,
@@ -122,17 +166,13 @@ impl Receiver<'_> {
                 continue;
             }
             let rx = awgn_adc(sym, link.esn0[i], &mut link.noise); // プリアンブルにも雑音を加える（gfm-tx と同じ実現になる）
-            let (llr, _, var) = self.modem.demodulate(&rx[N_PREAMBLE..], lay.n_tx);
+            let (q, var) = quantized_llr(lay, self.modem, self.scr, &rx);
             r.var[i] = ((var * VAR_UNIT).round() as i64).max(1);
-            let quantize =
-                |q: usize| -> i8 { ((if self.scr.sign(q) { -llr[q] } else { llr[q] }) * LLR_SCALE).round().clamp(-127.0, 127.0) as i8 };
             for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
-                r.llr[i * nbit + j] = quantize(idx);
+                r.llr[i * nbit + j] = q[idx];
             }
             if self.full {
-                for q in 0..lay.n_tx {
-                    r.llr_full[i * lay.n_tx + q] = quantize(q);
-                }
+                r.llr_full[i * lay.n_tx..(i + 1) * lay.n_tx].copy_from_slice(&q);
             }
         }
         r
@@ -164,26 +204,13 @@ pub fn generate(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, thread
     let tx = transmit(p, &lay, pcm, full)?;
     let receiver = Receiver { lay: &lay, modem: &modem, scr: &scr, tx: &tx, seed, full };
     let rx = parallel_map(scens.len(), threads, |si| receiver.scenario(&scens[si], si));
-    let mut protected = vec![0u8; lay.n_coef_bits()];
-    for &i in &lay.top_coef_idx {
-        protected[i] = 1;
-    }
-    let mut group = vec![0i64; lay.n_coef];
-    for (gi, &(ch, k)) in lay.coef_groups.iter().enumerate() {
-        let o = lay.coef_offset[&(ch, k)];
-        group[o..o + p.ncoef(k)].fill(gi as i64);
-    }
     Ok(Dataset {
         nfr: tx.syms.len(),
         nbit: lay.n_coef_bits(),
         ncoef: lay.n_coef,
         n_tx: lay.n_tx,
         scens: scens.to_vec(),
-        pos: lay.coef_pos.clone(),
-        coef_of_bit: lay.coef_flat.iter().map(|&v| v as i64).collect(),
-        strong: lay.coef_stream_idx.iter().map(|&i| (i < lay.n_strong) as u8).collect(),
-        protected,
-        group,
+        attrs: BitAttrs::new(p, &lay),
         tx,
         rx,
     })
@@ -209,13 +236,9 @@ impl Dataset {
             ("esn0", Npy::f32(&esn0, &[s, f])),
             ("var", Npy::i64(&var, &[s, f])),
             ("scen", Npy::f32(&scen, &[s, 4])),
-            ("pos", Npy::i64(&self.pos, &[nb])),
-            ("coef_of_bit", Npy::i64(&self.coef_of_bit, &[nb])),
-            ("strong", Npy::u8(&self.strong, &[nb])),
-            ("protected", Npy::u8(&self.protected, &[nb])),
-            ("group", Npy::i64(&self.group, &[nc])),
             ("start", Npy::i64(&[start], &[])),
         ];
+        entries.extend(self.attrs.entries());
         if !self.tx.bits_full.is_empty() {
             let llr_full = cat(&|r| r.llr_full.clone());
             entries.push(("bits_full", Npy::u8(&self.tx.bits_full, &[f, self.n_tx])));
