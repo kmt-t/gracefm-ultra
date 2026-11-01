@@ -24,6 +24,9 @@ from train_mend import Windows  # noqa: E402
 BUCKETS = [("連続1", 1, 1), ("連続2-3", 2, 3), ("連続4-8", 4, 8), ("連続9-25", 9, 25), ("連続26以上", 26, 10**9)]
 
 
+CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
+
+
 def ar_fill(coef, usable):
     """窓の係数 (T,64) の、使えないフレームを、時間領域の AR 両側補間で埋める"""
     x = haar_inv(coef).reshape(-1)
@@ -39,6 +42,8 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--windows", type=int, default=400)
     a = ap.parse_args()
+    os.sched_setaffinity(0, CPUS)
+    torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     va = Windows(sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz"))), dev)
     ck = torch.load(a.ckpt, map_location=dev)
