@@ -3,7 +3,7 @@
 MendNet の聴き比べ用 WAV。検証データ (gen_hn.py --mend) の 1 シナリオについて、原音・受信のまま (使えないフレームは無音)・AR 補間・MendNet を
 ステレオ (32 kHz、f32) で書く。MendNet は窓 100 フレームを 50 フレームずつずらし、各窓の中央 50 フレームを採る。
 
-  .venv-gpu/bin/python tools/demo_mend.py --ckpt runs/mend_B200.pt --scen 2 --seconds 12 --out runs/demo_mend
+  .venv/bin/python tools/demo_mend.py --ckpt runs/mend_B200.pt --scen 2 --seconds 12 --out runs/demo_mend
 """
 import argparse
 import glob

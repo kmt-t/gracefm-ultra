@@ -3,7 +3,7 @@
 MendNet の学習。data/<profile>/mend/{train,val} (gen_hn.py --mend) の、実際の復号の結果から窓 (WIN フレーム) を切り出す。
 窓は、使えない (壊れた・欠落) フレームを含むものを選ぶ。損失は使えないフレームの帯域ごとの相対二乗誤差 + 接続部の変化量の誤差。
 
-  .venv-gpu/bin/python tools/train_mend.py --profile B200 --minutes 30 --out runs/mend_B200.pt
+  .venv/bin/python tools/train_mend.py --profile B200 --minutes 30 --out runs/mend_B200.pt
 """
 import argparse
 import glob

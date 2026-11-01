@@ -3,7 +3,7 @@
 MendNet の評価。検証データ (gen_hn.py --mend) の、使えないフレームの SNR [dB] を、使えない連続区間の長さごとに、
 ゼロ埋め・AR 両側補間・MendNet で比べる。聴感は別に聴き比べる。
 
-  .venv-gpu/bin/python tools/eval_mend.py --profile B200 --ckpt runs/mend_B200.pt
+  .venv/bin/python tools/eval_mend.py --profile B200 --ckpt runs/mend_B200.pt
 """
 import argparse
 import glob

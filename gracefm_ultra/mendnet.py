@@ -91,8 +91,32 @@ def compose(y, coef, sig, usable):
     return torch.where(usable[:, :, None], coef, est)
 
 
-def mend_loss(y, target, sig, usable, coef, edge=0.1):
-    """target (B,T,64) 原音の係数。使えないフレームの帯域ごとの相対二乗誤差 + 使えないフレームに接する変化量の誤差。
+EDGE = 16
+_HINV = {}
+
+
+def haar_matrix(device):
+    """係数 (…,64) → 時間信号 (…,64) の行列 (haar_inv を単位行列に適用したもの)"""
+    if device not in _HINV:
+        _HINV[device] = torch.from_numpy(haar_inv(np.eye(64))).float().to(device)
+    return _HINV[device]
+
+
+def edge_weight(usable, device):
+    """時間領域 (B,T*64) の重み: 使えない区間の、使えるフレームに接する端の EDGE サンプルで 1 から 0 へ下がる"""
+    b, t = usable.shape
+    ramp = torch.linspace(1, 1 / EDGE, EDGE, device=device)
+    pre = torch.zeros(b, t, 64, device=device)              # 直前が使えるフレーム: 先頭側
+    post = torch.zeros(b, t, 64, device=device)             # 直後が使えるフレーム: 末尾側
+    prev = torch.cat([torch.ones_like(usable[:, :1]), usable[:, :-1]], 1) & ~usable
+    nxt = torch.cat([usable[:, 1:], torch.ones_like(usable[:, :1])], 1) & ~usable
+    pre[:, :, :EDGE] = prev[:, :, None].float() * ramp
+    post[:, :, 64 - EDGE:] = nxt[:, :, None].float() * ramp.flip(0)
+    return (pre + post).clamp(max=1).reshape(b, t * 64)
+
+
+def mend_loss(y, target, sig, usable, coef, edge=1.0):
+    """target (B,T,64) 原音の係数。使えないフレームの帯域ごとの相対二乗誤差 + 接続部 (使えるフレームとの境界) の時間波形の誤差。
     → (損失 (B,), 帯域ごとの相対誤差 (B,5))"""
     band = torch.from_numpy(BAND).to(y.device)
     bad = (~usable).float()[:, :, None]
@@ -106,8 +130,10 @@ def mend_loss(y, target, sig, usable, coef, edge=0.1):
         n = bad.sum(1)[:, 0] * int(m.sum())
         rel.append(d[:, :, m].sum((1, 2)) / (ref[:, :, m].sum((1, 2)) + FLOOR * n).clamp_min(1e-9))
     rel = torch.stack(rel, 1)
-    v = torch.where(usable[:, :, None], coef / sig[:, band][:, None, :], yn)
-    dv, dt = v[:, 1:] - v[:, :-1], t[:, 1:] - t[:, :-1]
-    touch = ((~usable[:, 1:]) | (~usable[:, :-1])).float()[:, :, None]
-    cont = (((dv - dt) ** 2) * touch).sum((1, 2)) / ((dt ** 2 * touch).sum((1, 2)) + FLOOR * touch.sum((1, 2)) * 64).clamp_min(1e-9)
+    h = haar_matrix(y.device)
+    est = torch.where(usable[:, :, None], coef, yn * sig[:, band][:, None, :])
+    e = ((est - target) @ h).reshape(est.shape[0], -1)
+    w = edge_weight(usable, y.device)
+    power = (sig[:, band] ** 2).mean(1, keepdim=True)                       # 窓の 1 サンプルあたりの電力の目安
+    cont = (w * e ** 2).sum(1) / (power[:, 0] * w.sum(1)).clamp_min(1e-12)
     return rel.mean(1) + edge * cont, rel
