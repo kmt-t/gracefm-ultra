@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MendNet の評価。検証データ (gen_hn.py --mend) の、使えないフレームの SNR [dB] を、状態 (壊れた・欠落) ごとに、
+MendNet の評価。検証データ (gen_hn.py --mend) の、使えないフレームの SNR [dB] を、使えない連続区間の長さごとに、
 ゼロ埋め・AR 両側補間・MendNet で比べる。聴感は別に聴き比べる。
 
   .venv-gpu/bin/python tools/eval_mend.py --profile B200 --ckpt runs/mend_B200.pt
@@ -19,6 +19,9 @@ sys.path.insert(0, HERE)
 from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_fwd, haar_inv  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
 from train_mend import Windows  # noqa: E402
+
+
+BUCKETS = [("連続1", 1, 1), ("連続2-3", 2, 3), ("連続4-8", 4, 8), ("連続9-25", 9, 25), ("連続26以上", 26, 10**9)]
 
 
 def ar_fill(coef, usable):
@@ -60,16 +63,28 @@ def main():
         t, c, st = b["target"][0].cpu().numpy(), b["coef"][0].cpu().numpy(), b["status"][0].cpu().numpy()
         us = st <= 1
         fills = {"ゼロ": c, "AR": ar_fill(c, us), "MendNet": est}
-        for name, name_st in (("壊れた", 2), ("欠落", 3)):
-            m = st == name_st
+        bad = ~us
+        run = np.zeros(len(us), int)                                       # 各フレームが属する、使えない連続区間の長さ
+        i = 0
+        while i < len(us):
+            if us[i]:
+                i += 1
+                continue
+            j = i
+            while j < len(us) and not us[j]:
+                j += 1
+            run[i:j] = j - i
+            i = j
+        for name, lo, hi in BUCKETS:
+            m = bad & (run >= lo) & (run <= hi)
             if not m.any():
                 continue
             for k, y in fills.items():
                 s = acc.setdefault((name, k), [0.0, 0.0])
                 s[0] += float((t[m] ** 2).sum())
                 s[1] += float(((y[m] - t[m]) ** 2).sum())
-    for name in ("壊れた", "欠落"):
-        print(name, "  ".join(f"{k} {10 * np.log10(acc[(name, k)][0] / acc[(name, k)][1]):+6.2f} dB" for k in ("ゼロ", "AR", "MendNet") if (name, k) in acc))
+    for name, _, _ in BUCKETS:
+        print(f"{name:10s}", "  ".join(f"{k} {10 * np.log10(acc[(name, k)][0] / acc[(name, k)][1]):+6.2f} dB" for k in ("ゼロ", "AR", "MendNet") if (name, k) in acc))
 
 
 if __name__ == "__main__":
