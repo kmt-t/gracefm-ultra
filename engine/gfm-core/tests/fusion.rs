@@ -14,6 +14,7 @@ fn stream(pcm: Vec<[f64; 2]>, valid: bool, var: f64) -> StreamResult {
         status: Vec::new(),
         gap: Vec::new(),
         hint: Vec::new(),
+        header: Vec::new(),
         rb: vec![[[var; 5]; 2]; n],
         stats: Default::default(),
     }

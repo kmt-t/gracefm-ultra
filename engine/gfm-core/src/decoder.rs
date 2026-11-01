@@ -85,6 +85,8 @@ pub struct StreamResult {
     pub gap: Vec<f64>,
     /// フレームごとの、基本 CRC が通らないフレームの手がかり（時刻合わせ前）
     pub hint: Vec<Option<Hint>>,
+    /// フレームごとの、復号したヘッダ（BlockData。基本 CRC が通ったフレームだけ。時刻合わせ前）
+    pub header: Vec<Option<BlockData>>,
     /// 時刻合わせ済みの、サンプルごとの誤差分散 [成分][帯域]
     pub rb: Vec<Rb>,
     pub stats: Stats,
@@ -258,6 +260,7 @@ impl Decoder {
         let mut status = Vec::with_capacity(nf);
         let mut gap = Vec::with_capacity(nf);
         let mut hint = Vec::with_capacity(nf);
+        let mut header = Vec::with_capacity(nf);
         let mut stats = Stats { frames: nf, ..Stats::default() };
         let mut tracker = Tracker::new();
         for (i, f) in frames.iter().enumerate() {
@@ -275,6 +278,7 @@ impl Decoder {
             status.push(d.status);
             gap.push(d.gap);
             hint.push(d.hint);
+            header.push(d.header.map(|(_, bd)| bd));
             if let Some(r) = d.rb {
                 for t in 0..h {
                     rb[i * b + t] = r[0];
@@ -298,6 +302,7 @@ impl Decoder {
             status,
             gap,
             hint,
+            header,
             rb: rb[start..end].to_vec(),
             stats,
         }

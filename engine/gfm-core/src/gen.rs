@@ -9,6 +9,7 @@
 //! - ビットの属性: `pos`（仮数内の位置）、`coef_of_bit`（係数の番号）、`strong`（強い位置か）、`protected`（FEC で守る上位ビットか）、`group`（係数の（成分, 帯域）の番号）
 
 use crate::channel::{awgn_adc, Link, Scen};
+use crate::codec::quant::BlockData;
 use crate::codec::{analyze, exp_range};
 use crate::decoder::reconstruct_coeffs;
 use crate::encoder::Encoder;
@@ -94,6 +95,19 @@ pub struct Dataset {
     attrs: BitAttrs,
 }
 
+/// BlockData（指数とアテネーション）から、係数ごとの量子化の刻み（満点 = 2^22 の尺度）を out に書く。指数やアテネーションがない帯域は 0 のまま
+pub(crate) fn block_steps(lay: &Layout, bd: &BlockData, out: &mut [f32]) {
+    let p = &lay.p;
+    for &(ch, k) in &lay.coef_groups {
+        let (Some(e), Some(attn)) = (bd.eidx[ch][k], bd.attn[ch][k].as_ref()) else { continue };
+        let e = e + exp_range(k, p.bits(ch)[k], p).0;
+        let o = lay.coef_offset[&(ch, k)];
+        for j in 0..p.ncoef(k) {
+            out[o + j] = (2f64.powi((e - p.attn_at(ch, k, attn, j)) as i32) * Q22) as f32;
+        }
+    }
+}
+
 pub(crate) fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) -> Result<Transmitted, String> {
     let nfr = pcm.len() / p.block;
     let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
@@ -118,12 +132,10 @@ pub(crate) fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) 
         }
         let bands = analyze(blk, p);
         let quantized = reconstruct_coeffs(lay, &bd);
+        block_steps(lay, &bd, &mut t.step[i * ncoef..(i + 1) * ncoef]);
         for &(ch, k) in &lay.coef_groups {
             let o = i * ncoef + lay.coef_offset[&(ch, k)];
-            let e = bd.eidx[ch][k].unwrap() + exp_range(k, p.bits(ch)[k], p).0;
-            let attn = bd.attn[ch][k].as_ref().unwrap();
             for j in 0..p.ncoef(k) {
-                t.step[o + j] = (2f64.powi((e - p.attn_at(ch, k, attn, j)) as i32) * Q22) as f32;
                 t.coef0[o + j] = (bands[ch][k][j] * Q22) as f32;
                 t.coefq[o + j] = (quantized[ch][k][j] * Q22) as f32;
             }

@@ -11,13 +11,13 @@
 //! - `hint_q` (s, f, ncomp, nb) f32: 手がかりの確からしさ（仮数の事後標準偏差 / qmax）。それ以外は 0
 //! - `gap` (s, f) f32: ヘッダ採用の、最尤との対数尤度の差 [nat]
 //! - `llr` (s, f, nbit) i8: 受信 LLR（`gen` と同じ定義。欠落フレームは 0）、`bits` (f, nbit) u8: 送信した仮数ビット、
-//!   `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）。ビットの属性（`pos` `coef_of_bit` `strong` `protected` `group`）は `gen` と同じ
+//!   `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）、`dstep` (s, f, nc) f32: Decoder が復号したヘッダの刻み（基本 CRC が通らない・欠落・高域欠落の帯域は 0）。ビットの属性（`pos` `coef_of_bit` `strong` `protected` `group`）は `gen` と同じ
 //! - `esn0` (s, f) f32、`scen` (s, 4) f32、`start` i64
 
 use crate::channel::{awgn_adc, Link, Scen};
 use crate::codec::analyze;
 use crate::decoder::{Decoder, Status};
-use crate::gen::{parallel_map, quantized_llr, transmit, BitAttrs, Transmitted};
+use crate::gen::{block_steps, parallel_map, quantized_llr, transmit, BitAttrs, Transmitted};
 use crate::layout::Layout;
 use crate::modem::Modem;
 use crate::npz::{write_npz, Npy};
@@ -31,6 +31,7 @@ struct Scenario {
     var: Vec<f32>,
     gap: Vec<f32>,
     llr: Vec<i8>,
+    dstep: Vec<f32>,
     hint_h: Vec<f32>,
     hint_q: Vec<f32>,
     esn0: Vec<f32>,
@@ -87,6 +88,7 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
             var: Vec::with_capacity(nfr * ncomp * nb),
             gap: r.gap.iter().map(|&g| g as f32).collect(),
             llr: vec![0; nfr * nbit],
+            dstep: vec![0.0; nfr * ncoef],
             hint_h: Vec::with_capacity(nfr * ncoef),
             hint_q: Vec::with_capacity(nfr * ncomp * nb),
             esn0: link.esn0.iter().map(|&e| e as f32).collect(),
@@ -97,6 +99,9 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
                 for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
                     s.llr[i * nbit + j] = q[idx];
                 }
+            }
+            if let Some(bd) = &r.header[i] {
+                block_steps(&lay, bd, &mut s.dstep[i * ncoef..(i + 1) * ncoef]);
             }
             let hint = r.hint[i].as_ref();
             for ch in 0..ncomp {
@@ -138,6 +143,7 @@ impl MendDataset {
             ("llr", Npy::i8(&llr, &[s, f, nbit])),
             ("bits", Npy::u8(&self.tx.bits, &[f, nbit])),
             ("step", Npy::f32(&self.tx.step, &[f, nc])),
+            ("dstep", Npy::f32(&cat(&|r| &r.dstep), &[s, f, nc])),
             ("esn0", Npy::f32(&cat(&|r| &r.esn0), &[s, f])),
             ("scen", Npy::f32(&scen, &[s, 4])),
             ("start", Npy::i64(&[start], &[])),
@@ -171,6 +177,10 @@ mod tests {
                     lost += 1;
                     assert!(l.iter().all(|&v| v == 0));
                     continue;
+                }
+                if s.status[i] == 0 {
+                    let nc = ds.ncoef;
+                    assert_eq!(s.dstep[i * nc..(i + 1) * nc], ds.tx.step[i * nc..(i + 1) * nc], "復号したヘッダの刻みが送信と違う");
                 }
                 wrong += l.iter().zip(&ds.tx.bits[i * nbit..]).filter(|(&v, &b)| v != 0 && ((v < 0) != (b == 1))).count();
             }
