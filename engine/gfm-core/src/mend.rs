@@ -7,6 +7,8 @@
 //! - `dec` (s, f, nc) f32: Decoder が復号した係数（融合・補間の前。使えないフレームは 0）
 //! - `status` (s, f) u8: 0 = 正常、1 = 高域欠落（基本 CRC は通った）、2 = 壊れた（届いたが基本 CRC が通らない）、3 = 欠落
 //! - `var` (s, f, ncomp, nb) f32: 復号した係数の誤差分散（線形、満点 1.0 に対する二乗）。情報なしは -1
+//! - `hint_h` (s, f, nc) f32: 壊れたフレーム（status 2）の尺度なしの手がかり（仮数の期待値 / qmax。`decoder::Hint`）。それ以外は 0
+//! - `hint_q` (s, f, ncomp, nb) f32: 手がかりの確からしさ（仮数の事後標準偏差 / qmax）。それ以外は 0
 //! - `gap` (s, f) f32: ヘッダ採用の、最尤との対数尤度の差 [nat]
 //! - `esn0` (s, f) f32、`scen` (s, 4) f32、`start` i64
 
@@ -24,6 +26,8 @@ struct Scenario {
     status: Vec<u8>,
     var: Vec<f32>,
     gap: Vec<f32>,
+    hint_h: Vec<f32>,
+    hint_q: Vec<f32>,
     esn0: Vec<f32>,
 }
 
@@ -72,9 +76,16 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
             status: r.status.iter().map(|&s| status_code(s)).collect(),
             var: Vec::with_capacity(nfr * ncomp * nb),
             gap: r.gap.iter().map(|&g| g as f32).collect(),
+            hint_h: Vec::with_capacity(nfr * ncoef),
+            hint_q: Vec::with_capacity(nfr * ncomp * nb),
             esn0: link.esn0.iter().map(|&e| e as f32).collect(),
         };
         for i in 0..nfr {
+            let hint = r.hint[i].as_ref();
+            for ch in 0..ncomp {
+                s.hint_h.extend(hint.map_or(vec![0.0; 64], |h| h.h[ch].iter().map(|&v| v as f32).collect()));
+                s.hint_q.extend((0..nb).map(|k| hint.map_or(0.0, |h| h.q[ch][k] as f32)));
+            }
             s.dec.extend(flatten(&analyze(&r.pcm[i * b..(i + 1) * b], p), ncomp));
             // 半ブロックごとの分散を、フレームで平均する。どちらかが情報なしなら、情報なし（-1）
             let (h0, h1) = (&r.rb[i * b], &r.rb[i * b + b / 2]);
@@ -104,6 +115,8 @@ impl MendDataset {
                 ("dec", Npy::f32(&cat(&|r| &r.dec), &[s, f, nc])),
                 ("status", Npy::u8(&status, &[s, f])),
                 ("var", Npy::f32(&cat(&|r| &r.var), &[s, f, self.ncomp, self.nbands])),
+                ("hint_h", Npy::f32(&cat(&|r| &r.hint_h), &[s, f, nc])),
+                ("hint_q", Npy::f32(&cat(&|r| &r.hint_q), &[s, f, self.ncomp, self.nbands])),
                 ("gap", Npy::f32(&cat(&|r| &r.gap), &[s, f])),
                 ("esn0", Npy::f32(&cat(&|r| &r.esn0), &[s, f])),
                 ("scen", Npy::f32(&scen, &[s, 4])),

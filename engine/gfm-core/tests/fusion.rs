@@ -13,6 +13,7 @@ fn stream(pcm: Vec<[f64; 2]>, valid: bool, var: f64) -> StreamResult {
         quality: vec![0; n / 64],
         status: Vec::new(),
         gap: Vec::new(),
+        hint: Vec::new(),
         rb: vec![[[var; 5]; 2]; n],
         stats: Default::default(),
     }

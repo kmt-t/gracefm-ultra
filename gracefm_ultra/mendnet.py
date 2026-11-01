@@ -39,6 +39,7 @@ def haar_inv(c):
 
 
 C_IN = 74
+C_IN_HINT = 143                  # v2: 壊れたフレームの手がかり h[64]、q[5] を足す
 GAP_SCALE = 8.0
 FLOOR = 0.05
 
@@ -63,11 +64,12 @@ class MendNet(nn.Module):
         return self.out(h)
 
 
-def build_input(coef, var, status, gap, comp):
+def build_input(coef, var, status, gap, comp, hint_h=None, hint_q=None):
     """MendNet の入力 v1 (74 チャンネル)。バッチ B、フレーム T、成分 1 つ。
     coef (B,T,64) 融合後の係数、var (B,T,5) 誤差分散 (情報なしは負)、status (B,T) 0/1 = 使える (1 = 高域欠落)・2 = 壊れた・3 = 欠落、
     gap (B,T) 段 A' の gap、comp (B,) 成分 (M = 0、S = 1)。
-    → (x (B,74,T), sigma (B,5) 帯域ごとの尺度, usable (B,T) bool)"""
+    hint_h (B,T,64)、hint_q (B,T,5): 壊れたフレームの手がかり。与えると v2 (143 チャンネル)。
+    → (x (B,74 または 143,T), sigma (B,5) 帯域ごとの尺度, usable (B,T) bool)"""
     band = torch.from_numpy(BAND).to(coef.device)
     usable = status <= 1
     have = (var >= 0) & usable[:, :, None]                                   # (B,T,5) 帯域ごとに値がある
@@ -82,7 +84,11 @@ def build_input(coef, var, status, gap, comp):
     s = torch.stack([usable.float(), (status == 2).float(), (status == 3).float()], -1)
     g = (1 - (gap / GAP_SCALE).clamp(0, 1)) * (status <= 2)
     c = comp.float()[:, None].expand(-1, coef.shape[1])
-    x = torch.cat([v, r, s, g[:, :, None], c[:, :, None]], -1)
+    parts = [v, r, s, g[:, :, None], c[:, :, None]]
+    if hint_h is not None:
+        broken = (status == 2).float()[:, :, None]
+        parts += [hint_h * broken, hint_q * broken]
+    x = torch.cat(parts, -1)
     return x.transpose(1, 2).contiguous(), sig, usable
 
 

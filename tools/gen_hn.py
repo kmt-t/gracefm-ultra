@@ -29,11 +29,11 @@ CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
 
 
 
-def scenarios(rng, n):
+def scenarios(rng, n, esn0_min=0.0):
     """多様な通信路のリスト [(基準Es/N0, フェージング, 欠落率, 平均バースト長)]"""
     out = []
     for i in range(n):
-        esn0 = float(rng.uniform(0, 16)) if rng.random() < 0.5 else float(rng.uniform(16, 40))      # 高 C/N (同軸直結など) も厚く
+        esn0 = float(rng.uniform(esn0_min, 16)) if rng.random() < 0.5 else float(rng.uniform(16, 40))      # 高 C/N (同軸直結など) も厚く
         fade = int(rng.random() < 0.5)
         rate = 0.0 if rng.random() < 0.5 else float(rng.choice([0.02, 0.05, 0.1, 0.2, 0.3]))
         burst = float(rng.choice([1, 3, 8, 25]))
@@ -55,7 +55,7 @@ def read_segment(path, start_s, dur_s):
 
 
 def job(args):
-    path, slot, profile, seconds, nscen, seed, outdir, mend = args
+    path, slot, profile, seconds, nscen, seed, outdir, mend, esn0_min = args
     os.sched_setaffinity(0, CPUS)
     p = PROFILES[profile]
     name = os.path.splitext(os.path.basename(path))[0][:50]
@@ -71,7 +71,7 @@ def job(args):
     pcm = wavio.to_pcm24(xs[a:a + n] * 0.5)
     nfr = len(pcm) // p.block
     pcm = pcm[:nfr * p.block]
-    scen = scenarios(np.random.default_rng(seed), nscen)
+    scen = scenarios(np.random.default_rng(seed), nscen, esn0_min)
     with tempfile.TemporaryDirectory() as d:
         raw = os.path.join(d, "x.raw")
         pcm.astype("<i4").tofile(raw)
@@ -98,6 +98,7 @@ def main():
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--sub", default="hn_big", help="出力先 data/<profile>/<sub>/<split>")
+    ap.add_argument("--esn0-min", type=float, default=0.0, help="シナリオの基準 Es/N0 の下限 [dB]")
     ap.add_argument("--mend", action="store_true", help="MendNet 用 (復号した係数・状態・分散) を書く")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     a = ap.parse_args()
@@ -115,7 +116,7 @@ def main():
         nslots = max(int(dur // (a.seconds + 2)), 1)
         rng = np.random.default_rng(a.seed * 1000 + i)
         for slot in rng.permutation(nslots)[:a.segments]:
-            jobs.append((path, int(slot), a.profile, a.seconds, a.scenarios, a.seed * 100000 + i * 100 + int(slot), outdir, a.mend))
+            jobs.append((path, int(slot), a.profile, a.seconds, a.scenarios, a.seed * 100000 + i * 100 + int(slot), outdir, a.mend, a.esn0_min))
     print(f"{a.profile} {a.split}: {len(jobs)} 区間 → {outdir}", flush=True)
     t0 = time.time()
     with Pool(min(a.workers, len(jobs), len(CPUS))) as pool:

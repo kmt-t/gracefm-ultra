@@ -41,6 +41,15 @@ pub struct Stats {
     pub recovered: usize,
 }
 
+/// 基本 CRC が通らないフレームの、尺度なしの手がかり。ヘッダ（指数）が分からなくても、仮数の受信 LLR から、帯域内の係数の相対的な形が残る
+#[derive(Clone, Debug)]
+pub struct Hint {
+    /// 係数ごとの仮数の期待値 / qmax（[-1, 1] 付近）。[成分][帯域を並べた 64 係数]。送らない帯域は 0
+    pub h: [Vec<f64>; 2],
+    /// 帯域ごとの、仮数の事後標準偏差の平均 / qmax（0〜1 に収める）。送らない帯域は 0
+    pub q: [[f64; MAX_BANDS]; 2],
+}
+
 pub struct DecodedFrame {
     /// (block) の L/R（満点 ±1）
     pub pcm: Vec<[f64; 2]>,
@@ -52,6 +61,8 @@ pub struct DecodedFrame {
     pub header: Option<(u64, BlockData)>,
     /// 採用したヘッダの、最尤との対数尤度の差 [nat]（`Unpacked::gap`）。届かない・CRC 不一致は 0
     pub gap: f64,
+    /// 基本 CRC が通らないフレームの手がかり
+    pub hint: Option<Hint>,
 }
 
 impl DecodedFrame {
@@ -72,6 +83,8 @@ pub struct StreamResult {
     /// フレームごとの状態と、ヘッダの採用の最尤との差 [nat]（時刻合わせ前）
     pub status: Vec<Status>,
     pub gap: Vec<f64>,
+    /// フレームごとの、基本 CRC が通らないフレームの手がかり（時刻合わせ前）
+    pub hint: Vec<Option<Hint>>,
     /// 時刻合わせ済みの、サンプルごとの誤差分散 [成分][帯域]
     pub rb: Vec<Rb>,
     pub stats: Stats,
@@ -161,7 +174,39 @@ impl Decoder {
     }
 
     fn missing(&self, status: Status) -> DecodedFrame {
-        DecodedFrame { pcm: vec![[0.0, 0.0]; self.p.block], status, quality: QUALITY_MISSING, rb: None, header: None, gap: 0.0 }
+        DecodedFrame { pcm: vec![[0.0, 0.0]; self.p.block], status, quality: QUALITY_MISSING, rb: None, header: None, gap: 0.0, hint: None }
+    }
+
+    /// 仮数ビットの受信 LLR（スクランブル解除後）から、尺度なしの手がかりを作る
+    fn hint(&self, llr: &[f64]) -> Hint {
+        let lay = &self.lay;
+        let p = &self.p;
+        let mut eu = vec![0f64; lay.n_coef];
+        let mut var = vec![0f64; lay.n_coef];
+        for (j, &cf) in lay.coef_flat.iter().enumerate() {
+            let p1 = 1.0 / (1.0 + llr[lay.coef_stream_idx[j]].clamp(-40.0, 40.0).exp());
+            let w = (1u64 << lay.coef_pos[j]) as f64;
+            eu[cf] += p1 * w;
+            var[cf] += p1 * (1.0 - p1) * w * w;
+        }
+        let mut hint = Hint { h: [vec![0.0; 64], vec![0.0; 64]], q: [[0.0; MAX_BANDS]; 2] };
+        for ch in 0..2 {
+            let mut base = 0;
+            for k in 0..p.nbands() {
+                let n = p.ncoef(k);
+                let b = p.bits(ch)[k];
+                if b > 0 {
+                    let (o, qmax) = (lay.coef_offset[&(ch, k)], qmax_of(b) as f64);
+                    for j in 0..n {
+                        hint.h[ch][base + j] = (eu[o + j] - qmax) / qmax;
+                        hint.q[ch][k] += var[o + j].sqrt() / qmax;
+                    }
+                    hint.q[ch][k] = (hint.q[ch][k] / n as f64).clamp(0.0, 1.0);
+                }
+                base += n;
+            }
+        }
+        hint
     }
 
     /// 1 フレームの受信シンボル（プリアンブル込み、±1 = 1.0。届かなければ None）→ 復号結果。返り値の 2 つ目は Chase 救済で反転した bit の数。
@@ -177,7 +222,11 @@ impl Decoder {
         let lay = &self.lay;
         let u = match unpack(lay, &llr, &hard, opt) {
             Some(r) => r,
-            None => return (self.missing(Status::CrcFail), 0),
+            None => {
+                let mut d = self.missing(Status::CrcFail);
+                d.hint = Some(self.hint(&llr));
+                return (d, 0);
+            }
         };
         // 1 である確率 = 1 / (1 + e^LLR)（LLR が正なら 0 らしい）
         let mut p1: Vec<f64> = lay.coef_stream_idx.iter().map(|&i| 1.0 / (1.0 + llr[i].clamp(-40.0, 40.0).exp())).collect();
@@ -191,7 +240,8 @@ impl Decoder {
         };
         let (coef, rb) = soft_coeffs(lay, &u.bd, &p1, u.high_ok);
         let gap = u.gap;
-        let frame = DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), header: Some((u.counter, u.bd)), gap };
+        let frame =
+            DecodedFrame { pcm: synthesize(&coef), status, quality, rb: Some(rb), header: Some((u.counter, u.bd)), gap, hint: None };
         (frame, u.rank)
     }
 
@@ -207,6 +257,7 @@ impl Decoder {
         let mut quality = vec![0; nf];
         let mut status = Vec::with_capacity(nf);
         let mut gap = Vec::with_capacity(nf);
+        let mut hint = Vec::with_capacity(nf);
         let mut stats = Stats { frames: nf, ..Stats::default() };
         let mut tracker = Tracker::new();
         for (i, f) in frames.iter().enumerate() {
@@ -223,6 +274,7 @@ impl Decoder {
             quality[i] = d.quality;
             status.push(d.status);
             gap.push(d.gap);
+            hint.push(d.hint);
             if let Some(r) = d.rb {
                 for t in 0..h {
                     rb[i * b + t] = r[0];
@@ -245,6 +297,7 @@ impl Decoder {
             quality,
             status,
             gap,
+            hint,
             rb: rb[start..end].to_vec(),
             stats,
         }

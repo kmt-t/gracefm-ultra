@@ -49,7 +49,7 @@ def main():
     for _ in range(a.windows):
         b = va.batch(1, rng)
         with torch.no_grad():
-            x, sig, usable = build_input(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"])
+            x, sig, usable = build_input(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], *((b["hint_h"], b["hint_q"]) if ck.get("hint", False) else ()))
             est = compose(net(x), b["coef"], sig, usable)[0].cpu().numpy()
         t, c, st = b["target"][0].cpu().numpy(), b["coef"][0].cpu().numpy(), b["status"][0].cpu().numpy()
         us = st <= 1
