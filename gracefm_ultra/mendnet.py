@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch import nn
 
+from .plc_ar import interpolate
+
 BLOCK = 64
 WIN = 100
 COUNTS = [4, 4, 8, 16, 32]
@@ -137,3 +139,37 @@ def mend_loss(y, target, sig, usable, coef, edge=1.0):
     power = (sig[:, band] ** 2).mean(1, keepdim=True)                       # 窓の 1 サンプルあたりの電力の目安
     cont = (w * e ** 2).sum(1) / (power[:, 0] * w.sum(1)).clamp_min(1e-12)
     return rel.mean(1) + edge * cont, rel
+
+
+def unusable_runs(usable):
+    """使えないフレームの連続区間 [(a, b), …]"""
+    runs, i, n = [], 0, len(usable)
+    while i < n:
+        if usable[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and not usable[j]:
+            j += 1
+        runs.append((i, j))
+        i = j
+    return runs
+
+
+def join_ar(coef, usable, xfade=96):
+    """coef (T,64): 使えないフレームを MendNet で埋めた係数。各区間の両端 xfade サンプルを、AR 両側補間 (境界で必ず連続する) へ
+    余弦窓で寄せる。区間の中身は MendNet のまま。→ 係数 (T,64)"""
+    x = haar_inv(coef).reshape(-1)
+    y = x.copy()
+    for a, b in unusable_runs(usable):
+        a, b = a * BLOCK, b * BLOCK
+        ar = interpolate(x, a, b)
+        n = min(int(xfade), (b - a) // 2)
+        if n <= 0:
+            continue
+        ramp = 0.5 * (1 + np.cos(np.pi * np.arange(n) / n))
+        w = np.zeros(b - a)
+        w[:n] = ramp
+        w[b - a - n:] = np.maximum(w[b - a - n:], ramp[::-1])
+        y[a:b] = w * ar + (1 - w) * x[a:b]
+    return haar_fwd(y.reshape(-1, BLOCK))

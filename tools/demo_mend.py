@@ -19,7 +19,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from eval_mend import ar_fill  # noqa: E402
-from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_inv  # noqa: E402
+from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_inv, join_ar  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 FS = 32000
@@ -61,6 +61,7 @@ def main():
     ap.add_argument("--scen", type=int, default=2)
     ap.add_argument("--start", type=float, default=2.0)
     ap.add_argument("--seconds", type=float, default=12.0)
+    ap.add_argument("--clean", action="store_true", help="使えるフレームを原音にする (補間だけを聴く。受信の雑音を除く)")
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -70,6 +71,9 @@ def main():
     r = slice(int(a.start * FS / 64), int((a.start + a.seconds) * FS / 64))
     truth, dec = z["truth"][r], z["dec"][a.scen][r]
     var, st, gap = z["var"][a.scen][r], z["status"][a.scen][r], z["gap"][a.scen][r]
+    if a.clean:
+        dec = np.where((st <= 1)[:, None], truth, 0.0).astype(np.float32)
+        var = np.where((var >= 0) & (st <= 1)[:, None, None], 1e-9, var).astype(np.float32)
     ck = torch.load(a.ckpt, map_location=dev)
     net = MendNet(**ck["cfg"]).to(dev).eval()
     net.load_state_dict(ck["model"])
@@ -79,13 +83,13 @@ def main():
         d = dec[:, ch * 64:ch * 64 + 64]
         ar.append(ar_fill(d.astype(np.float64), us))
         md.append(mend_stream(net, d, var[:, ch], st, gap, ch, dev))
-    sets = {"original": [truth[:, :64], truth[:, 64:]], "received": [dec[:, :64], dec[:, 64:]], "ar": ar, "mendnet": md}
+    sets = {"original": [truth[:, :64], truth[:, 64:]], "received": [dec[:, :64], dec[:, 64:]], "ar": ar, "mendnet": md, "mendnet_join": [join_ar(m, us) for m in md]}
     os.makedirs(a.out, exist_ok=True)
     ref = to_audio(*sets["original"])
     bad = np.repeat(~us, 64)
     for name, (m, s) in sets.items():
         y = to_audio(m, s)
-        wavio.write(os.path.join(a.out, f"{os.path.basename(f)[:30]}_s{a.scen}_{name}.wav"), y, FS)
+        wavio.write(os.path.join(a.out, f"{os.path.basename(f)[:30]}_s{a.scen}{'_clean' if a.clean else ''}_{name}.wav"), y, FS)
         e = ((y - ref)[bad] ** 2).sum()
         print(f"{name:9s} 使えない区間の SNR {10 * np.log10((ref[bad] ** 2).sum() / e) if e > 0 else float('inf'):+6.2f} dB")
     print(f"シナリオ {z['scen'][a.scen]}、使えないフレーム {int((~us).sum())}/{len(us)}、出力 {a.out}")

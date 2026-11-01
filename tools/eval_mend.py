@@ -16,7 +16,7 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
-from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_fwd, haar_inv  # noqa: E402
+from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_fwd, haar_inv, join_ar, unusable_runs  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
 from train_mend import Windows  # noqa: E402
 
@@ -27,17 +27,8 @@ BUCKETS = [("連続1", 1, 1), ("連続2-3", 2, 3), ("連続4-8", 4, 8), ("連続
 def ar_fill(coef, usable):
     """窓の係数 (T,64) の、使えないフレームを、時間領域の AR 両側補間で埋める"""
     x = haar_inv(coef).reshape(-1)
-    t = len(usable)
-    i = 0
-    while i < t:
-        if usable[i]:
-            i += 1
-            continue
-        j = i
-        while j < t and not usable[j]:
-            j += 1
+    for i, j in unusable_runs(usable):
         x[i * 64:j * 64] = interpolate(x, i * 64, j * 64)
-        i = j
     return haar_fwd(x.reshape(-1, 64))
 
 
@@ -62,7 +53,7 @@ def main():
             est = compose(net(x), b["coef"], sig, usable)[0].cpu().numpy()
         t, c, st = b["target"][0].cpu().numpy(), b["coef"][0].cpu().numpy(), b["status"][0].cpu().numpy()
         us = st <= 1
-        fills = {"ゼロ": c, "AR": ar_fill(c, us), "MendNet": est}
+        fills = {"ゼロ": c, "AR": ar_fill(c, us), "MendNet": est, "MendNet+AR接続": join_ar(est, us)}
         bad = ~us
         run = np.zeros(len(us), int)                                       # 各フレームが属する、使えない連続区間の長さ
         i = 0
@@ -84,7 +75,7 @@ def main():
                 s[0] += float((t[m] ** 2).sum())
                 s[1] += float(((y[m] - t[m]) ** 2).sum())
     for name, _, _ in BUCKETS:
-        print(f"{name:10s}", "  ".join(f"{k} {10 * np.log10(acc[(name, k)][0] / acc[(name, k)][1]):+6.2f} dB" for k in ("ゼロ", "AR", "MendNet") if (name, k) in acc))
+        print(f"{name:10s}", "  ".join(f"{k} {10 * np.log10(acc[(name, k)][0] / acc[(name, k)][1]):+6.2f} dB" for k in ("ゼロ", "AR", "MendNet", "MendNet+AR接続") if (name, k) in acc))
 
 
 if __name__ == "__main__":
