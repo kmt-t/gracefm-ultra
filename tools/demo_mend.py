@@ -27,7 +27,7 @@ CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
 HOP = WIN // 2
 
 
-def mend_stream(net, coef, var, status, gap, comp, dev, hint=None):
+def mend_stream(net, coef, var, status, gap, comp, dev, hint=None, refine=False):
     """coef (N,64) の、使えないフレームを MendNet で埋める。ストリームの両端の外は欠落として埋める"""
     n = len(coef)
     pad = WIN // 4
@@ -44,7 +44,7 @@ def mend_stream(net, coef, var, status, gap, comp, dev, hint=None):
         b = lambda x, dt=torch.float32: torch.from_numpy(np.ascontiguousarray(x[sl])).to(dev, dt)[None]  # noqa: E731
         with torch.no_grad():
             x, sig, usable = build_input(b(c), b(v), b(s, torch.long), b(g), torch.tensor([comp], device=dev), *((b(hh), b(hq)) if hint else ()))
-            est = compose(net(x), b(c), sig, usable)[0].cpu().numpy()
+            est = compose(net(x), b(c), sig, usable, refine)[0].cpu().numpy()
         lo, hi = a + WIN // 4, a + WIN // 4 + HOP                       # 窓の中央 50 フレーム (padded 座標)
         for t in range(max(lo, pad), min(hi, pad + n)):
             out[t - pad] = est[t - a]
@@ -87,7 +87,7 @@ def main():
     for ch in range(2):
         d = dec[:, ch * 64:ch * 64 + 64]
         ar.append(ar_fill(d.astype(np.float64), us))
-        md.append(mend_stream(net, d, var[:, ch], st, gap, ch, dev, (z['hint_h'][a.scen][r][:, ch * 64:ch * 64 + 64], z['hint_q'][a.scen][r][:, ch]) if ck.get('hint', False) else None))
+        md.append(mend_stream(net, d, var[:, ch], st, gap, ch, dev, (z['hint_h'][a.scen][r][:, ch * 64:ch * 64 + 64], z['hint_q'][a.scen][r][:, ch]) if ck.get('hint', False) else None, ck.get('refine', False)))
     sets = {"original": [truth[:, :64], truth[:, 64:]], "received": [dec[:, :64], dec[:, 64:]], "ar": ar, "mendnet": md, "mendnet_join": [join_ar(m, us) for m in md]}
     os.makedirs(a.out, exist_ok=True)
     ref = to_audio(*sets["original"])

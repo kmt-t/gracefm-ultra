@@ -62,7 +62,7 @@ def main():
     for ch in range(2):
         s = slice(ch * 64, ch * 64 + 64)
         hint = (z["hint_h"][a.scen][r][:, s], z["hint_q"][a.scen][r][:, ch]) if ck.get("hint", False) else None
-        out.append(join_ar(mend_stream(net, dec[:, s], var[:, ch], st, gap, ch, dev, hint), us))
+        out.append(join_ar(mend_stream(net, dec[:, s], var[:, ch], st, gap, ch, dev, hint, ck.get("refine", False)), us))
     sets = {"original": to_audio(truth[:, :64], truth[:, 64:]), "mendnet_join": to_audio(*out)}
     sets["error"] = sets["mendnet_join"] - sets["original"]
     sets["received"] = to_audio(dec[:, :64], dec[:, 64:])

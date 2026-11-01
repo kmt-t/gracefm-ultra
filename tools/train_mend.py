@@ -43,10 +43,13 @@ class Windows:
         self.ncomp = self.var[0].shape[2]
         self.device = device
 
-    def batch(self, bs, rng):
+    def batch(self, bs, rng, anywhere=False):
         out = {k: [] for k in ("coef", "var", "status", "gap", "comp", "target", "hint_h", "hint_q")}
         while len(out["coef"]) < bs:
             si, sc, fr = self.bad[rng.integers(len(self.bad))]
+            if anywhere and rng.random() < 0.5:                  # 使えないフレームのない窓も (使えるフレームの補正の学習)
+                si = int(rng.integers(len(self.truth)))
+                sc, fr = int(rng.integers(self.dec[si].shape[0])), int(rng.integers(self.truth[si].shape[0]))
             n = self.truth[si].shape[0]
             a = int(np.clip(fr - rng.integers(0, WIN), 0, n - WIN))
             st = self.status[si][sc, a:a + WIN]
@@ -65,10 +68,10 @@ class Windows:
         return {k: torch.stack(v).to(self.device) for k, v in out.items()}
 
 
-def forward(net, b, hint):
+def forward(net, b, hint, refine):
     x, sig, usable = build_input(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], *((b["hint_h"], b["hint_q"]) if hint else ()))
     y = net(x)
-    return mend_loss(y, b["target"], sig, usable, b["coef"])
+    return mend_loss(y, b["target"], sig, usable, b["coef"], refine=refine)
 
 
 def main():
@@ -80,6 +83,7 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
     ap.add_argument("--hint", action="store_true", help="v2: 壊れたフレームの手がかりを入力に足す")
+    ap.add_argument("--refine", action="store_true", help="使えるフレームの係数も補正する (HaarNet の役割を持たせる)")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"mend_{a.profile}.pt")
@@ -104,7 +108,7 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss, _ = forward(net, tr.batch(a.bs, rng), a.hint)
+        loss, _ = forward(net, tr.batch(a.bs, rng, a.refine), a.hint, a.refine)
         opt.zero_grad()
         loss.mean().backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -114,12 +118,12 @@ def main():
         if step % 100 == 0:
             with torch.no_grad():
                 net.eval()
-                v = torch.cat([forward(net, b, a.hint)[1] for b in vb]).mean(0).cpu().numpy()
+                v = torch.cat([forward(net, b, a.hint, a.refine)[1] for b in vb]).mean(0).cpu().numpy()
                 net.train()
             print(f"step {step:5d}  {time.time() - t0:5.0f}s  loss {np.mean(run[-100:]):.4f}  検証 帯域別 {np.round(v, 3)}", flush=True)
         if step % 500 == 0:
-            torch.save({"model": net.state_dict(), "cfg": cfg, "hint": a.hint, "step": step}, out)
-    torch.save({"model": net.state_dict(), "cfg": cfg, "hint": a.hint, "step": step}, out)
+            torch.save({"model": net.state_dict(), "cfg": cfg, "hint": a.hint, "refine": a.refine, "step": step}, out)
+    torch.save({"model": net.state_dict(), "cfg": cfg, "hint": a.hint, "refine": a.refine, "step": step}, out)
     print(f"終了 step {step}", flush=True)
 
 

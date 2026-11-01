@@ -49,16 +49,21 @@ def main():
     ck = torch.load(a.ckpt, map_location=dev)
     net = MendNet(**ck["cfg"]).to(dev).eval()
     net.load_state_dict(ck["model"])
+    refine = ck.get("refine", False)
     rng = np.random.default_rng(7)
+    keep = [0.0, 0.0, 0.0]                                                  # 使えるフレーム: 信号、復号のまま、補正後の誤差
     acc = {}                                                               # (状態, 手法) → [信号, 誤差]
     for _ in range(a.windows):
         b = va.batch(1, rng)
         with torch.no_grad():
             x, sig, usable = build_input(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], *((b["hint_h"], b["hint_q"]) if ck.get("hint", False) else ()))
-            est = compose(net(x), b["coef"], sig, usable)[0].cpu().numpy()
+            est = compose(net(x), b["coef"], sig, usable, refine)[0].cpu().numpy()
         t, c, st = b["target"][0].cpu().numpy(), b["coef"][0].cpu().numpy(), b["status"][0].cpu().numpy()
         us = st <= 1
         fills = {"ゼロ": c, "AR": ar_fill(c, us), "MendNet": est, "MendNet+AR接続": join_ar(est, us)}
+        keep[0] += float((t[us] ** 2).sum())
+        keep[1] += float(((c[us] - t[us]) ** 2).sum())
+        keep[2] += float(((est[us] - t[us]) ** 2).sum())
         bad = ~us
         run = np.zeros(len(us), int)                                       # 各フレームが属する、使えない連続区間の長さ
         i = 0
@@ -81,6 +86,8 @@ def main():
                 s[1] += float(((y[m] - t[m]) ** 2).sum())
     for name, _, _ in BUCKETS:
         print(f"{name:10s}", "  ".join(f"{k} {10 * np.log10(acc[(name, k)][0] / acc[(name, k)][1]):+6.2f} dB" for k in ("ゼロ", "AR", "MendNet", "MendNet+AR接続") if (name, k) in acc))
+
+    print(f"使えるフレーム  復号のまま {10 * np.log10(keep[0] / keep[1]):+6.2f} dB  補正後 {10 * np.log10(keep[0] / keep[2]):+6.2f} dB")
 
 
 if __name__ == "__main__":

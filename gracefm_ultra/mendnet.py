@@ -92,11 +92,11 @@ def build_input(coef, var, status, gap, comp, hint_h=None, hint_q=None):
     return x.transpose(1, 2).contiguous(), sig, usable
 
 
-def compose(y, coef, sig, usable):
-    """出力 y (B,64,T) を係数に戻す。使えるフレームは復号した値、使えないフレームは y × sigma"""
+def compose(y, coef, sig, usable, refine=False):
+    """出力 y (B,64,T) を係数に戻す。使えないフレームは y × sigma。使えるフレームは、復号した値 (refine なら、復号した値 + y × sigma)"""
     band = torch.from_numpy(BAND).to(y.device)
     est = y.transpose(1, 2) * sig[:, band][:, None, :]
-    return torch.where(usable[:, :, None], coef, est)
+    return torch.where(usable[:, :, None], coef + est if refine else coef, est)
 
 
 EDGE = 16
@@ -123,28 +123,33 @@ def edge_weight(usable, device):
     return (pre + post).clamp(max=1).reshape(b, t * 64)
 
 
-def mend_loss(y, target, sig, usable, coef, edge=1.0):
+def mend_loss(y, target, sig, usable, coef, edge=1.0, refine=False):
     """target (B,T,64) 原音の係数。使えないフレームの帯域ごとの相対二乗誤差 + 接続部 (使えるフレームとの境界) の時間波形の誤差。
-    → (損失 (B,), 帯域ごとの相対誤差 (B,5))"""
+    refine なら、使えるフレームの帯域ごとの相対二乗誤差も足す。→ (損失 (B,), 使えないフレームの帯域ごとの相対誤差 (B,5))"""
     band = torch.from_numpy(BAND).to(y.device)
-    bad = (~usable).float()[:, :, None]
-    t = target / sig[:, band][:, None, :]
+    sg = sig[:, band][:, None, :]
+    t = target / sg
     yn = y.transpose(1, 2)
-    d = ((yn - t) ** 2 * bad)
-    ref = (t ** 2 * bad)
-    rel = []
-    for k in range(5):
-        m = band == k
-        n = bad.sum(1)[:, 0] * int(m.sum())
-        rel.append(d[:, :, m].sum((1, 2)) / (ref[:, :, m].sum((1, 2)) + FLOOR * n).clamp_min(1e-9))
-    rel = torch.stack(rel, 1)
-    h = haar_matrix(y.device)
-    est = torch.where(usable[:, :, None], coef, yn * sig[:, band][:, None, :])
-    e = ((est - target) @ h).reshape(est.shape[0], -1)
+    est_n = torch.where(usable[:, :, None], coef / sg + yn if refine else coef / sg, yn)
+
+    def relative(mask):
+        m3 = mask.float()[:, :, None]
+        d, ref = (est_n - t) ** 2 * m3, t ** 2 * m3
+        out = []
+        for k in range(5):
+            m = band == k
+            out.append(d[:, :, m].sum((1, 2)) / (ref[:, :, m].sum((1, 2)) + FLOOR * m3.sum((1, 2)) * int(m.sum())).clamp_min(1e-9))
+        return torch.stack(out, 1)
+
+    rel = relative(~usable)
+    loss = rel.mean(1)
+    if refine:
+        loss = loss + relative(usable).mean(1)
+    e = ((est_n * sg - target) @ haar_matrix(y.device)).reshape(y.shape[0], -1)
     w = edge_weight(usable, y.device)
     power = (sig[:, band] ** 2).mean(1, keepdim=True)                       # 窓の 1 サンプルあたりの電力の目安
     cont = (w * e ** 2).sum(1) / (power[:, 0] * w.sum(1)).clamp_min(1e-12)
-    return rel.mean(1) + edge * cont, rel
+    return loss + edge * cont, rel
 
 
 def unusable_runs(usable):
