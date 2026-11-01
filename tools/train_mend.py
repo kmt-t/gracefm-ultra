@@ -16,7 +16,7 @@ import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from gracefm_ultra.mendnet import C_IN, C_IN_HINT, WIN, MendNet, build_input, mend_loss  # noqa: E402
+from gracefm_ultra.mendnet import C_IN, C_IN_HINT, WIN, MendNet, bit_index, build_input, mend_loss  # noqa: E402
 
 CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
 MIN_USABLE = 10
@@ -25,8 +25,9 @@ MIN_USABLE = 10
 class Windows:
     """全区間・全シナリオを (CPU に) 保持して、窓をバッチで切り出す"""
 
-    def __init__(self, files, device):
+    def __init__(self, files, device, bits=False):
         self.truth, self.dec, self.var, self.status, self.gap, self.hint_h, self.hint_q = [], [], [], [], [], [], []
+        self.bits, self.llr, self.rbits, self.step, self.dstep = bits, [], [], [], []
         self.bad = []                                              # (区間, シナリオ, フレーム) の、使えないフレーム
         for si, f in enumerate(files):
             z = np.load(f)
@@ -37,6 +38,14 @@ class Windows:
             self.gap.append(torch.from_numpy(z["gap"]))
             self.hint_h.append(torch.from_numpy(z["hint_h"]))
             self.hint_q.append(torch.from_numpy(z["hint_q"]))
+            if bits:
+                self.llr.append(torch.from_numpy(z["llr"]))
+                self.rbits.append(torch.from_numpy(z["bits"]))
+                self.step.append(torch.from_numpy(z["step"]))
+                self.dstep.append(torch.from_numpy(z["dstep"]))
+                if si == 0:
+                    idx, ok = bit_index(z["coef_of_bit"])
+                    self.bit_idx, self.bit_ok = torch.from_numpy(idx), torch.from_numpy(ok)
             s, fr = np.nonzero(z["status"] >= 2)
             self.bad.append(np.stack([np.full_like(s, si), s, fr], 1))
         self.bad = np.concatenate(self.bad)
@@ -44,7 +53,8 @@ class Windows:
         self.device = device
 
     def batch(self, bs, rng, anywhere=False):
-        out = {k: [] for k in ("coef", "var", "status", "gap", "comp", "target", "hint_h", "hint_q")}
+        keys = ("coef", "var", "status", "gap", "comp", "target", "hint_h", "hint_q") + (("llr", "bits", "dstep", "step") if self.bits else ())
+        out = {k: [] for k in keys}
         while len(out["coef"]) < bs:
             si, sc, fr = self.bad[rng.integers(len(self.bad))]
             if anywhere and rng.random() < 0.5:                  # 使えないフレームのない窓も (使えるフレームの補正の学習)
@@ -65,7 +75,16 @@ class Windows:
             out["hint_h"].append(self.hint_h[si][sc, a:a + WIN, sl])
             out["hint_q"].append(self.hint_q[si][sc, a:a + WIN, ch])
             out["comp"].append(torch.tensor(ch))
-        return {k: torch.stack(v).to(self.device) for k, v in out.items()}
+            if self.bits:
+                bi = self.bit_idx[ch]
+                out["llr"].append(self.llr[si][sc, a:a + WIN][:, bi] * self.bit_ok[ch])
+                out["bits"].append(self.rbits[si][a:a + WIN][:, bi])
+                out["dstep"].append(self.dstep[si][sc, a:a + WIN, sl])
+                out["step"].append(self.step[si][a:a + WIN, sl])
+        batch = {k: torch.stack(v).to(self.device) for k, v in out.items()}
+        if self.bits:
+            batch["ok"] = self.bit_ok.to(self.device)[batch["comp"]][:, None, :]
+        return batch
 
 
 def forward(net, b, hint, refine):

@@ -45,7 +45,7 @@ FLOOR = 0.05
 
 
 class MendNet(nn.Module):
-    def __init__(self, c_in=C_IN, ch=192, blocks=12):
+    def __init__(self, c_in=C_IN, ch=192, blocks=12, c_out=64):
         super().__init__()
         dil = [1, 2, 4, 8, 16, 32]
         self.inp = nn.Conv1d(c_in, ch, 1)
@@ -53,7 +53,7 @@ class MendNet(nn.Module):
         self.c1 = nn.ModuleList([nn.Conv1d(ch, ch, 3, dilation=dil[i % 6], padding=dil[i % 6]) for i in range(blocks)])
         self.c2 = nn.ModuleList([nn.Conv1d(ch, ch, 1) for _ in range(blocks)])
         self.act = nn.GELU()
-        self.out = nn.Conv1d(ch, 64, 1)
+        self.out = nn.Conv1d(ch, c_out, 1)
         nn.init.zeros_(self.out.weight)
         nn.init.zeros_(self.out.bias)
 
@@ -90,6 +90,67 @@ def build_input(coef, var, status, gap, comp, hint_h=None, hint_q=None):
         parts += [hint_h * broken, hint_q * broken]
     x = torch.cat(parts, -1)
     return x.transpose(1, 2).contiguous(), sig, usable
+
+
+Q22 = float(1 << 22)
+STEP_OFFSET = 16.0                # 刻みの特徴: (log2(刻み / 2^22) + 16) / 16
+LLR_SCALE = 4.0                   # 整数 LLR は自然対数の LLR の 4 倍
+STEP_WEIGHT = 0.1
+
+
+def bit_index(coef_of_bit):
+    """仮数ビットの、成分ごとの位置 (npz の coef_of_bit から)。成分 ch の係数は 64 ch .. 64 ch + 63 番。
+    → (idx (2, NB) 長い成分に合わせて 0 で詰める, 有効 (2, NB) bool)"""
+    cb = np.asarray(coef_of_bit)
+    per = [np.nonzero(cb // 64 == ch)[0] for ch in range(2)]
+    nb = max(len(v) for v in per)
+    idx = np.zeros((2, nb), np.int64)
+    ok = np.zeros((2, nb), bool)
+    for ch, v in enumerate(per):
+        idx[ch, :len(v)] = v
+        ok[ch, :len(v)] = True
+    return idx, ok
+
+
+def step_feature(dstep):
+    """刻み (…, 64)（0 = 不明）→ (特徴 (…, 64)、既知 (…, 64) float)"""
+    known = dstep > 0
+    f = (torch.log2(dstep.clamp_min(1.0) / Q22) + STEP_OFFSET) / STEP_OFFSET
+    return torch.where(known, f, torch.zeros_like(f)), known.float()
+
+
+def build_input_bits(coef, var, status, gap, comp, hint_h, hint_q, llr, dstep):
+    """MendNet の入力（ビット出力版）。build_input の v2 (143 チャンネル) に、受信 LLR (B,T,NB)（整数。成分のビット順、詰めた分は 0）と、
+    復号したヘッダの刻み dstep (B,T,64) を足す。→ (x (B, 143 + NB + 128, T), sig, usable, 刻みの特徴 (B,T,64))"""
+    x, sig, usable = build_input(coef, var, status, gap, comp, hint_h, hint_q)
+    sf, known = step_feature(dstep)
+    x = torch.cat([x, (llr.float() / 32).transpose(1, 2), sf.transpose(1, 2), known.transpose(1, 2)], 1)
+    return x.contiguous(), sig, usable, sf
+
+
+def bits_out(y, llr, sf):
+    """出力 y (B, NB + 64, T) → (自然対数の LLR (B,T,NB)（正 = 0 らしい）、刻みの特徴 (B,T,64))。
+    LLR は受信 LLR への補正、刻みは復号したヘッダ（不明は 0）への補正"""
+    nb = llr.shape[-1]
+    y = y.transpose(1, 2)
+    return llr.float() / LLR_SCALE + y[..., :nb], sf + y[..., nb:]
+
+
+def bits_loss(llr_out, step_out, bits, ok, sf_true, usable):
+    """bits (B,T,NB) 真のビット、ok (B,1,NB) 有効なビット、sf_true (B,T,64) 真の刻みの特徴。
+    ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）を、使えるフレームと使えないフレームで別々に平均して足す。
+    → (損失 (B,), 使えないフレームの BCE (B,), 使えるフレームの BCE (B,))"""
+    okf = ok.float()
+    bce = torch.nn.functional.binary_cross_entropy_with_logits(-llr_out, bits.float(), reduction="none")      # 正 = 0 なので logit は -LLR
+    bce = (bce * okf).sum(2) / okf.sum(2)
+    st = torch.nn.functional.huber_loss(step_out * STEP_OFFSET, sf_true * STEP_OFFSET, reduction="none").mean(2)
+    bad, good = (~usable).float(), usable.float()
+
+    def mean(v, m):
+        return (v * m).sum(1) / m.sum(1).clamp_min(1)
+
+    per = bce + STEP_WEIGHT * st
+    return mean(per, bad) + mean(per, good), mean(bce, bad), mean(bce, good)
 
 
 def compose(y, coef, sig, usable, refine=False):
