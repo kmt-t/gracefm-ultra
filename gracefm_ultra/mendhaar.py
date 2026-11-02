@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from .haarnet import soft_e0
-from .mendnet import LLR_SCALE, Q22, STEP_OFFSET, bits_out, build_input_bits
+from .mendnet import LLR_SCALE, Q22, STEP_OFFSET, bits_loss, bits_out, build_input_bits
 
 EDGE_FRAMES = 4                    # 窓の両端のフレームは損失から除く
 HALF = 64                          # 成分あたりの係数の数
@@ -14,17 +14,19 @@ HALF = 64                          # 成分あたりの係数の数
 
 def run_mend(net, per_comp, bit_idx, bit_ok, nbit):
     """前段を両成分に走らせて、後段の入力にする。per_comp[ch]: 成分 ch の窓 (Windows.gather)。bit_idx、bit_ok: mendnet.bit_index の結果 (torch)。
-    → (LLR (B,T,nbit) 整数 LLR の尺度、刻み (B,T,128) 満点 2^22 の尺度)"""
+    → (LLR (B,T,nbit) 整数 LLR の尺度、刻み (B,T,128) 満点 2^22 の尺度、前段の損失 (B,) 両成分の平均 (mendnet.bits_loss))"""
     b0 = per_comp[0]
     llr = torch.zeros(b0["coef"].shape[0], b0["coef"].shape[1], nbit, device=b0["coef"].device)
     step = torch.zeros(llr.shape[0], llr.shape[1], 2 * HALF, device=llr.device)
+    front_loss = 0.0
     for ch, b in enumerate(per_comp):
-        x, _, _, sf = build_input_bits(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], b["hint_h"], b["hint_q"], b["llr"], b["dstep"])
+        x, _, usable, sf = build_input_bits(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], b["hint_h"], b["hint_q"], b["llr"], b["dstep"])
         l, st = bits_out(net(x), b["llr"], sf, b["dstep"])
+        front_loss = front_loss + 0.5 * bits_loss(l, st, b, usable)[0]
         ok = bit_ok[ch]
         llr[:, :, bit_idx[ch][ok]] = (l * LLR_SCALE)[:, :, ok]
         step[:, :, ch * HALF:(ch + 1) * HALF] = Q22 * 2.0 ** (st * STEP_OFFSET - STEP_OFFSET).clamp(-40, 12)
-    return llr, step
+    return llr, step, front_loss
 
 
 def features(llr, step, status, meta):

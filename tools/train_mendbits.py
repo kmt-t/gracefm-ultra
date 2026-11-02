@@ -18,15 +18,14 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
-from gracefm_ultra.mendnet import C_IN_HINT, MendNet, bits_loss, bits_out, build_input_bits, step_feature  # noqa: E402
+from gracefm_ultra.mendnet import C_IN_HINT, MendNet, bits_loss, bits_out, build_input_bits  # noqa: E402
 from train_mend import CPUS, Windows  # noqa: E402
 
 
 def forward(net, b):
     x, _, usable, sf = build_input_bits(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], b["hint_h"], b["hint_q"], b["llr"], b["dstep"])
     llr, step = bits_out(net(x), b["llr"], sf, b["dstep"])
-    sf_true, _ = step_feature(b["step"])
-    return llr, step, bits_loss(llr, step, b["bits"], b["ok"], sf_true, usable), usable
+    return llr, step, bits_loss(llr, step, b, usable), usable
 
 
 def main():

@@ -96,6 +96,8 @@ Q22 = float(1 << 22)
 STEP_OFFSET = 16.0                # 刻みの特徴: (log2(刻み / 2^22) + 16) / 16
 LLR_SCALE = 4.0                   # 整数 LLR は自然対数の LLR の 4 倍
 STEP_WEIGHT = 0.1
+COEF_WEIGHT = 1.0
+FLOOR_REL = 0.01                  # 係数の相対誤差の分母の下限（窓全体のエネルギーの割合）
 
 
 def bit_index(coef_of_bit):
@@ -136,21 +138,36 @@ def bits_out(y, llr, sf, dstep):
     return llr.float() / LLR_SCALE + y[..., :nb], torch.where(dstep > 0, sf, y[..., nb:])
 
 
-def bits_loss(llr_out, step_out, bits, ok, sf_true, usable):
-    """bits (B,T,NB) 真のビット、ok (B,1,NB) 有効なビット、sf_true (B,T,64) 真の刻みの特徴。
-    ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）を、使えるフレームと使えないフレームで別々に平均して足す。
+def coef_error(llr, b):
+    """LLR (B,T,NB)（自然対数、正 = 0）から作る仮数の期待値と真の仮数の差（Σ (p1 - b) 2^pos）に真の刻みをかけた、係数の誤差 (B,T,64)（満点 = 1.0）。
+    窓 b は Windows.gather の出力"""
+    w = (2.0 ** b["pos"].float())[:, None, :] * b["ok"]
+    diff = (torch.sigmoid(-llr) - b["bits"].float()) * w
+    e = torch.zeros(diff.shape[0], diff.shape[1], 64, device=diff.device).scatter_add_(2, b["coef_of_bit"][:, None, :].expand_as(diff), diff)
+    return e * b["step"] / Q22
+
+
+def bits_loss(llr_out, step_out, b, usable):
+    """b: Windows.gather の出力（bits、ok、step、target、pos、coef_of_bit を使う）。
+    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ 係数の相対誤差（coef_error の二乗和 / 原音の二乗和）。
+    それぞれ、使えるフレームと使えないフレームで別々に平均して足す。
     → (損失 (B,), 使えないフレームの BCE (B,), 使えるフレームの BCE (B,))"""
-    okf = ok.float()
-    bce = torch.nn.functional.binary_cross_entropy_with_logits(-llr_out, bits.float(), reduction="none")      # 正 = 0 なので logit は -LLR
+    okf = b["ok"].float()
+    bce = torch.nn.functional.binary_cross_entropy_with_logits(-llr_out, b["bits"].float(), reduction="none")      # 正 = 0 なので logit は -LLR
     bce = (bce * okf).sum(2) / okf.sum(2)
+    sf_true = step_feature(b["step"])[0]
     st = torch.nn.functional.huber_loss(step_out * STEP_OFFSET, sf_true * STEP_OFFSET, reduction="none").mean(2)
     bad, good = (~usable).float(), usable.float()
+    e2, t2 = (coef_error(llr_out, b) ** 2).sum(2), (b["target"] ** 2).sum(2)                                    # (B,T)
 
     def mean(v, m):
         return (v * m).sum(1) / m.sum(1).clamp_min(1)
 
+    def rel(m):
+        return (e2 * m).sum(1) / ((t2 * m).sum(1) + FLOOR_REL * t2.sum(1) + 1e-9)
+
     per = bce + STEP_WEIGHT * st
-    return mean(per, bad) + mean(per, good), mean(bce, bad), mean(bce, good)
+    return mean(per, bad) + mean(per, good) + COEF_WEIGHT * (rel(bad) + rel(good)), mean(bce, bad), mean(bce, good)
 
 
 def compose(y, coef, sig, usable, refine=False):
