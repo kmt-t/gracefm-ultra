@@ -18,8 +18,9 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm_ultra.mendnet import C_IN_HINT, MendNet, bits_loss, bits_out, build_input_bits  # noqa: E402
-from train_mend import CPUS, Windows  # noqa: E402
+from train_mend import Windows  # noqa: E402
 
 
 def forward(net, b):
@@ -38,7 +39,7 @@ def main():
     ap.add_argument("--out", default="")
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"mendbits_{a.profile}.pt")
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     rng = np.random.default_rng(0)

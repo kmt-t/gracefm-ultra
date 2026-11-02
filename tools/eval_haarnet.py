@@ -19,13 +19,13 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.layout import Layout  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from hn_index import dataset_index  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
 
 HM = torch.from_numpy(haar_matrix()).float()
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
 def main():
@@ -36,7 +36,7 @@ def main():
     ap.add_argument("--sub", default="hn_big", help="評価データの置き場 data/<profile>/<sub>/val")
     a = ap.parse_args()
     ckpt = a.ckpt or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(min(len(CPUS), 4))
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ck = torch.load(ckpt, map_location="cpu")

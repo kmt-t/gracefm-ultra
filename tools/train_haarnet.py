@@ -19,10 +19,9 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.haarnet import WIN, HaarNetLite, features, haar_matrix, make_meta  # noqa: E402
-
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}      # 使ってよいコア (環境変数で変更)
 
 
 def load(split, profile, sub="hn_big"):
@@ -143,7 +142,7 @@ def main():
     ap.add_argument("--min-esn0", type=float, default=-1e9, help="この Es/N0 [dB] 以上のシナリオだけで学習する")
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"hn_{a.profile}.pt")
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(min(len(CPUS), 4))
     rng = np.random.default_rng(0)
     data = load("train", a.profile, a.train_sub)

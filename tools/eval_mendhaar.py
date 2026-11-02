@@ -19,12 +19,13 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from eval_mend import BUCKETS, ar_fill  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.haarnet import make_meta  # noqa: E402
 from gracefm_ultra.mendhaar import HaarStage, estimate  # noqa: E402
 from gracefm_ultra.mendnet import MendNet, build_input, compose  # noqa: E402
-from train_mend import CPUS, Windows  # noqa: E402
+from train_mend import Windows  # noqa: E402
 from train_mendhaar import load_front, step_batch  # noqa: E402
 
 
@@ -58,7 +59,7 @@ def main():
     ap.add_argument("--old", default="", help="旧 MendNet (係数を出す版) のチェックポイント")
     ap.add_argument("--windows", type=int, default=1500)
     a = ap.parse_args()
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     d = os.path.join(a.data, a.profile, "mend")

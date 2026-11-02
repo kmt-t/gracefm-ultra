@@ -16,7 +16,8 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
-from demo_mend import CPUS, FS, mend_stream, to_audio  # noqa: E402
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
+from demo_mend import FS, mend_stream, to_audio  # noqa: E402
 from gracefm_ultra.mendnet import BAND, MendNet, join_ar  # noqa: E402
 
 BANDS_HZ = [(0, 1000), (1000, 2000), (2000, 4000), (4000, 8000), (8000, 16000)]           # 帯域 k = 0〜4 の周波数範囲 (32 kHz、Haar の 5 帯域)
@@ -46,7 +47,7 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     f = sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz")))[a.file]

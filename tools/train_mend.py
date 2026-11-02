@@ -16,9 +16,9 @@ import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import pin  # noqa: E402
 from gracefm_ultra.mendnet import C_IN, C_IN_HINT, WIN, MendNet, bit_index, build_input, mend_loss  # noqa: E402
 
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
 MIN_USABLE = 10
 
 
@@ -119,7 +119,7 @@ def main():
     ap.add_argument("--out", default="")
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"mend_{a.profile}.pt")
-    os.sched_setaffinity(0, CPUS)
+    pin()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     rng = np.random.default_rng(0)
     d = os.path.join(a.data, a.profile, "mend")

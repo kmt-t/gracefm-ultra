@@ -18,8 +18,9 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm_ultra.mendnet import STEP_OFFSET, MendNet, bits_out, build_input_bits, step_feature  # noqa: E402
-from train_mend import CPUS, Windows  # noqa: E402
+from train_mend import Windows  # noqa: E402
 
 
 def main():
@@ -29,7 +30,7 @@ def main():
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--windows", type=int, default=1500)
     a = ap.parse_args()
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     va = Windows(sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz"))), dev, bits=True)

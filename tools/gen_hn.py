@@ -21,12 +21,11 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 BIN = os.path.join(HERE, "..", "engine", "target", "release", "gfm-gen")
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
-
 
 
 def scenarios(rng, n, esn0_min=0.0):
@@ -56,7 +55,7 @@ def read_segment(path, start_s, dur_s):
 
 def job(args):
     path, slot, profile, seconds, nscen, seed, outdir, mend, esn0_min = args
-    os.sched_setaffinity(0, CPUS)
+    pin()
     p = PROFILES[profile]
     name = os.path.splitext(os.path.basename(path))[0][:50]
     out = os.path.join(outdir, f"{name}_{slot}_{seed}.npz")
@@ -102,7 +101,7 @@ def main():
     ap.add_argument("--mend", action="store_true", help="MendNet 用 (復号した係数・状態・分散) を書く")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     a = ap.parse_args()
-    os.sched_setaffinity(0, CPUS)
+    pin()
     files = sorted(f for f in os.listdir(a.src) if f.endswith((".flac", ".wav")))
     outdir = os.path.join(a.data, a.profile, a.sub, a.split)
     os.makedirs(outdir, exist_ok=True)

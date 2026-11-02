@@ -18,12 +18,12 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from eval_mend import ar_fill  # noqa: E402
 from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_inv, join_ar  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 FS = 32000
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
 HOP = WIN // 2
 
 
@@ -68,7 +68,7 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     f = sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz")))[a.file]

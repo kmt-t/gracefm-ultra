@@ -16,15 +16,13 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
+from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm_ultra.mendnet import WIN, MendNet, build_input, compose, haar_fwd, haar_inv, join_ar, unusable_runs  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
 from train_mend import Windows  # noqa: E402
 
 
 BUCKETS = [("連続1", 1, 1), ("連続2-3", 2, 3), ("連続4-8", 4, 8), ("連続9-25", 9, 25), ("連続26以上", 26, 10**9)]
-
-
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
 
 
 def ar_fill(coef, usable):
@@ -42,7 +40,7 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--windows", type=int, default=400)
     a = ap.parse_args()
-    os.sched_setaffinity(0, CPUS)
+    pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     va = Windows(sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz"))), dev)

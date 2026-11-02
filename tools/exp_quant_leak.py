@@ -16,6 +16,7 @@ from scipy.signal import welch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
+from gracefm_ultra.cpus import pin  # noqa: E402
 from materials import MATERIALS, load  # noqa: E402
 from gracefm_ultra.gfm import GRACEFM  # noqa: E402,F401
 import rs  # noqa: E402
@@ -30,7 +31,7 @@ def main():
     ap.add_argument("--profile", default="B200")
     ap.add_argument("--seconds", type=float, default=8.0)
     a = ap.parse_args()
-    os.sched_setaffinity(0, {7, 11})
+    pin({7, 11})
     p = PROFILES[a.profile]
     print(f"{a.profile}: 量子化のみ (通信路なし)。帯域ごとの 原音レベル / 誤差レベル [dBFS、帯域内の合計電力] / 誤差−原音 [dB] (正なら誤差の方が大きい = 漏れが聞こえうる)\n")
     print(f"{'素材':12}" + "".join(f"{lo // 1000}-{hi // 1000}kHz".rjust(22) for lo, hi in BANDS))
