@@ -42,7 +42,8 @@ def main():
     top = 3
     sq = {m: {n: [0.0, 0.0] for n in names} for m in models}                          # 誤差の二乗和、原音の二乗和
     msb = {m: {n: np.zeros((top, 2)) for n in names} for m in models}                 # 上位 top 個のビット: 誤り数、ビット数
-    stp = {n: [0.0, 0.0, 0] for n in names}                                           # 刻みの誤差、指数一致、係数数
+    stp = {n: np.zeros(5) for n in names}                                             # 刻みの誤差、|誤差| < 0.5、< 1.5 の数、係数数、予測の刻みを使った誤差の二乗和
+    tsum = {n: 0.0 for n in names}
     for _ in range(a.windows // 25):
         b = va.batch(25, rng, True)
         with torch.no_grad():
@@ -68,22 +69,25 @@ def main():
                     s2 = sel[:, :, None] & ok & (rank == r)[:, None, :]
                     msb[m][n][r] += [err[s2].sum().item(), s2.sum().item()]
             if m == "MendNet":
+                e_mend = e
                 d = ((st - sf_true) * STEP_OFFSET).abs()
                 for c, n in enumerate(names):
                     sel = (cls == c)[:, :, None].expand_as(d)
-                    stp[n][0] += d[sel].sum().item()
-                    stp[n][1] += (d[sel] < 0.5).sum().item()
-                    stp[n][2] += sel.sum().item()
+                    stp[n] += [d[sel].sum().item(), (d[sel] < 0.5).sum().item(), (d[sel] < 1.5).sum().item(), sel.sum().item(), 0.0]
+                    r = 2.0 ** ((st - sf_true) * STEP_OFFSET)                                 # 予測の刻み / 真の刻み
+                    t = b["target"]
+                    stp[n][4] += (((t * (r - 1)) + e_mend * r)[cls == c] ** 2).sum().item()
+                    tsum[n] += (t[cls == c] ** 2).sum().item()
     for m in models:
         print(m)
         for n in names:
             e, t = sq[m][n]
             r = " ".join(f"{msb[m][n][k, 0] / max(msb[m][n][k, 1], 1):.4f}" for k in range(top))
             print(f"  {n:4s} 係数 SNR {10 * np.log10(t / max(e, 1e-30)):+6.2f} dB  上位ビット 1〜{top} 番目の誤り率 {r}")
-    print("刻み (MendNet): log2 の誤差の平均 / 指数が合う割合")
+    print("刻み (MendNet): log2 の誤差の平均 / 指数が合う割合 / ±1 以内の割合 / 予測した刻みを使った係数 SNR")
     for n in names:
-        d, e, c = stp[n]
-        print(f"  {n:4s} {d / max(c, 1):.3f} / {e / max(c, 1):.3f}")
+        d, e0, e1, c, q = stp[n]
+        print(f"  {n:4s} {d / max(c, 1):.3f} / {e0 / max(c, 1):.3f} / {e1 / max(c, 1):.3f} / {10 * np.log10(tsum[n] / max(q, 1e-30)):+6.2f} dB")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@
 //! - `hint_q` (s, f, ncomp, nb) f32: 手がかりの確からしさ（仮数の事後標準偏差 / qmax）。それ以外は 0
 //! - `gap` (s, f) f32: ヘッダ採用の、最尤との対数尤度の差 [nat]
 //! - `llr` (s, f, nbit) i8: 受信 LLR（`gen` と同じ定義。欠落フレームは 0）、`bits` (f, nbit) u8: 送信した仮数ビット、
-//!   `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）、`dstep` (s, f, nc) f32: Decoder が復号したヘッダの刻み（基本 CRC が通らない・欠落・高域欠落の帯域は 0）。ビットの属性（`pos` `coef_of_bit` `strong` `protected` `group`）は `gen` と同じ
+//!   `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）、`dstep` (s, f, nc) f32: Decoder が復号したヘッダの刻み（基本 CRC が通らない・欠落のフレームと、高域欠落のフレームの高域は 0）。ビットの属性（`pos` `coef_of_bit` `strong` `protected` `group`）は `gen` と同じ
 //! - `esn0` (s, f) f32、`scen` (s, 4) f32、`start` i64
 
 use crate::channel::{awgn_adc, Link, Scen};
@@ -101,7 +101,7 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
                 }
             }
             if let Some(bd) = &r.header[i] {
-                block_steps(&lay, bd, &mut s.dstep[i * ncoef..(i + 1) * ncoef]);
+                block_steps(&lay, bd, r.status[i] == Status::Ok, &mut s.dstep[i * ncoef..(i + 1) * ncoef]);
             }
             let hint = r.hint[i].as_ref();
             for ch in 0..ncomp {
@@ -178,9 +178,12 @@ mod tests {
                     assert!(l.iter().all(|&v| v == 0));
                     continue;
                 }
+                let nc = ds.ncoef;
+                let (d, t) = (&s.dstep[i * nc..(i + 1) * nc], &ds.tx.step[i * nc..(i + 1) * nc]);
                 if s.status[i] == 0 {
-                    let nc = ds.ncoef;
-                    assert_eq!(s.dstep[i * nc..(i + 1) * nc], ds.tx.step[i * nc..(i + 1) * nc], "復号したヘッダの刻みが送信と違う");
+                    assert_eq!(d, t, "復号したヘッダの刻みが送信と違う");
+                } else if s.status[i] == 1 {
+                    assert!(d.iter().zip(t).all(|(&d, &t)| d == 0.0 || d == t), "高域欠落のフレームの刻みが送信と違う");
                 }
                 wrong += l.iter().zip(&ds.tx.bits[i * nbit..]).filter(|(&v, &b)| v != 0 && ((v < 0) != (b == 1))).count();
             }

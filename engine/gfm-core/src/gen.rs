@@ -95,10 +95,14 @@ pub struct Dataset {
     attrs: BitAttrs,
 }
 
-/// BlockData（指数とアテネーション）から、係数ごとの量子化の刻み（満点 = 2^22 の尺度）を out に書く。指数やアテネーションがない帯域は 0 のまま
-pub(crate) fn block_steps(lay: &Layout, bd: &BlockData, out: &mut [f32]) {
+/// BlockData（指数とアテネーション）から、係数ごとの量子化の刻み（満点 = 2^22 の尺度）を out に書く。指数やアテネーションがない帯域は 0 のまま。
+/// high_ok が false のときは、高域（high_k 以上の帯域）のヘッダは信用できないので 0 のまま
+pub(crate) fn block_steps(lay: &Layout, bd: &BlockData, high_ok: bool, out: &mut [f32]) {
     let p = &lay.p;
     for &(ch, k) in &lay.coef_groups {
+        if k >= p.high_k() && !high_ok {
+            continue;
+        }
         let (Some(e), Some(attn)) = (bd.eidx[ch][k], bd.attn[ch][k].as_ref()) else { continue };
         let e = e + exp_range(k, p.bits(ch)[k], p).0;
         let o = lay.coef_offset[&(ch, k)];
@@ -132,7 +136,7 @@ pub(crate) fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]], full: bool) 
         }
         let bands = analyze(blk, p);
         let quantized = reconstruct_coeffs(lay, &bd);
-        block_steps(lay, &bd, &mut t.step[i * ncoef..(i + 1) * ncoef]);
+        block_steps(lay, &bd, true, &mut t.step[i * ncoef..(i + 1) * ncoef]);
         for &(ch, k) in &lay.coef_groups {
             let o = i * ncoef + lay.coef_offset[&(ch, k)];
             for j in 0..p.ncoef(k) {
