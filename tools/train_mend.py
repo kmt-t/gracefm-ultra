@@ -54,25 +54,29 @@ class Windows:
         self.ncomp = self.var[0].shape[2]
         self.device = device
 
-    def batch(self, bs, rng, anywhere=False):
-        keys = ("coef", "var", "status", "gap", "comp", "target", "hint_h", "hint_q") + (("llr", "bits", "dstep", "step") if self.bits else ())
-        out = {k: [] for k in keys}
-        while len(out["coef"]) < bs:
+    def locate(self, bs, rng, anywhere=False):
+        """窓の位置 [(区間, シナリオ, 先頭フレーム), …] を bs 個選ぶ"""
+        locs = []
+        while len(locs) < bs:
             si, sc, fr = self.bad[rng.integers(len(self.bad))]
             if anywhere and rng.random() < 0.5:                  # 使えないフレームのない窓も (使えるフレームの補正の学習)
                 si = int(rng.integers(len(self.truth)))
                 sc, fr = int(rng.integers(self.dec[si].shape[0])), int(rng.integers(self.truth[si].shape[0]))
-            n = self.truth[si].shape[0]
-            a = int(np.clip(fr - rng.integers(0, WIN), 0, n - WIN))
-            st = self.status[si][sc, a:a + WIN]
-            if (st <= 1).sum() < MIN_USABLE:
-                continue
-            ch = int(rng.integers(self.ncomp))
+            a = int(np.clip(fr - rng.integers(0, WIN), 0, self.truth[si].shape[0] - WIN))
+            if (self.status[si][sc, a:a + WIN] <= 1).sum() >= MIN_USABLE:
+                locs.append((int(si), int(sc), a))
+        return locs
+
+    def gather(self, locs, comps):
+        """locs の窓を、窓ごとの成分 comps (0 = M、1 = S) で切り出して積む"""
+        keys = ("coef", "var", "status", "gap", "comp", "target", "hint_h", "hint_q") + (("llr", "bits", "dstep", "step") if self.bits else ())
+        out = {k: [] for k in keys}
+        for (si, sc, a), ch in zip(locs, comps):
             sl = slice(ch * 64, ch * 64 + 64)
             out["coef"].append(self.dec[si][sc, a:a + WIN, sl])
             out["target"].append(self.truth[si][a:a + WIN, sl])
             out["var"].append(self.var[si][sc, a:a + WIN, ch])
-            out["status"].append(st)
+            out["status"].append(self.status[si][sc, a:a + WIN])
             out["gap"].append(self.gap[si][sc, a:a + WIN])
             out["hint_h"].append(self.hint_h[si][sc, a:a + WIN, sl])
             out["hint_q"].append(self.hint_q[si][sc, a:a + WIN, ch])
@@ -89,6 +93,11 @@ class Windows:
             batch["pos"] = self.bit_pos.to(self.device)[batch["comp"]]
             batch["coef_of_bit"] = self.bit_coef.to(self.device)[batch["comp"]]
         return batch
+
+    def batch(self, bs, rng, anywhere=False):
+        """窓を bs 個、成分は窓ごとにランダムで切り出す"""
+        locs = self.locate(bs, rng, anywhere)
+        return self.gather(locs, rng.integers(self.ncomp, size=bs))
 
 
 def forward(net, b, hint, refine):
