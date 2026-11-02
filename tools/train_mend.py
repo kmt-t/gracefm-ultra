@@ -46,6 +46,8 @@ class Windows:
                 if si == 0:
                     idx, ok = bit_index(z["coef_of_bit"])
                     self.bit_idx, self.bit_ok = torch.from_numpy(idx), torch.from_numpy(ok)
+                    self.bit_pos = torch.from_numpy(z["pos"][idx])                       # (2, NB) 仮数内の位置 (大きいほど上位)
+                    self.bit_coef = torch.from_numpy(z["coef_of_bit"][idx] % 64)         # (2, NB) 成分内の係数の番号
             s, fr = np.nonzero(z["status"] >= 2)
             self.bad.append(np.stack([np.full_like(s, si), s, fr], 1))
         self.bad = np.concatenate(self.bad)
@@ -84,6 +86,8 @@ class Windows:
         batch = {k: torch.stack(v).to(self.device) for k, v in out.items()}
         if self.bits:
             batch["ok"] = self.bit_ok.to(self.device)[batch["comp"]][:, None, :]
+            batch["pos"] = self.bit_pos.to(self.device)[batch["comp"]]
+            batch["coef_of_bit"] = self.bit_coef.to(self.device)[batch["comp"]]
         return batch
 
 
