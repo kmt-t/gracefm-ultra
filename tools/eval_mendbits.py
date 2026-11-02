@@ -48,7 +48,7 @@ def main():
         b = va.batch(25, rng, True)
         with torch.no_grad():
             x, _, usable, sf = build_input_bits(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], b["hint_h"], b["hint_q"], b["llr"], b["dstep"])
-            out = bits_out(net(x), b["llr"], sf)
+            out = bits_out(net(x), b["llr"], sf, b["dstep"])
         raw = (b["llr"].float() / 4, sf)
         sf_true, _ = step_feature(b["step"])
         cls = b["status"].long().clamp(1, 3) - 1                                      # 0 = 使える (0, 1)、1 = 壊れた、2 = 欠落

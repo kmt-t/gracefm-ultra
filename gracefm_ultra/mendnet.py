@@ -128,12 +128,12 @@ def build_input_bits(coef, var, status, gap, comp, hint_h, hint_q, llr, dstep):
     return x.contiguous(), sig, usable, sf
 
 
-def bits_out(y, llr, sf):
+def bits_out(y, llr, sf, dstep):
     """出力 y (B, NB + 64, T) → (自然対数の LLR (B,T,NB)（正 = 0 らしい）、刻みの特徴 (B,T,64))。
-    LLR は受信 LLR への補正、刻みは復号したヘッダ（不明は 0）への補正"""
+    LLR は受信 LLR への補正。刻みは、復号したヘッダがあればそのまま、なければ（dstep = 0）出力"""
     nb = llr.shape[-1]
     y = y.transpose(1, 2)
-    return llr.float() / LLR_SCALE + y[..., :nb], sf + y[..., nb:]
+    return llr.float() / LLR_SCALE + y[..., :nb], torch.where(dstep > 0, sf, y[..., nb:])
 
 
 def bits_loss(llr_out, step_out, bits, ok, sf_true, usable):
