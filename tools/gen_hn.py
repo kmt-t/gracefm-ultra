@@ -2,7 +2,7 @@
 """
 HaarNet 用 (--mend なら MendNet 用) の学習データを作る (Rust の engine/gfm-gen を使う)。
 音源 1 本から複数の区間 (seconds + 2 秒の枠ごとに 1 区間) を取り、符号化 → 通信路シナリオ → 受信 LLR を data/<profile>/<sub>/<split>/ に書く。
-train / val は音源の番号で分ける (7 本に 1 本が val)。出力は data/<profile>/<sub>/<split>/*.npz (受信 LLR、送信ビット、刻み、量子化前後の係数、シナリオ)。
+train / val は音源の番号で分ける (7 本に 1 本が val)。--awgn を与えると、通信路はランダムではなく、その Es/N0 ごとの AWGN のみ (フェージング・人工の欠落なし)。出力は data/<profile>/<sub>/<split>/*.npz (受信 LLR、送信ビット、刻み、量子化前後の係数、シナリオ)。
 
   .venv/bin/python tools/gen_hn.py --profile B200 --split train --segments 4 --workers 2 --sub hn_big
 """
@@ -54,7 +54,7 @@ def read_segment(path, start_s, dur_s):
 
 
 def job(args):
-    path, slot, profile, seconds, nscen, seed, outdir, mend, esn0_min = args
+    path, slot, profile, seconds, scen, seed, outdir, mend = args
     pin()
     p = PROFILES[profile]
     name = os.path.splitext(os.path.basename(path))[0][:50]
@@ -70,7 +70,6 @@ def job(args):
     pcm = wavio.to_pcm24(xs[a:a + n] * 0.5)
     nfr = len(pcm) // p.block
     pcm = pcm[:nfr * p.block]
-    scen = scenarios(np.random.default_rng(seed), nscen, esn0_min)
     with tempfile.TemporaryDirectory() as d:
         raw = os.path.join(d, "x.raw")
         pcm.astype("<i4").tofile(raw)
@@ -83,7 +82,7 @@ def job(args):
         if r.returncode:
             raise RuntimeError(r.stderr[-500:])
     os.replace(out + ".tmp", out)
-    return out, nfr, nscen, time.time() - t0
+    return out, nfr, len(scen), time.time() - t0
 
 
 def main():
@@ -98,6 +97,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--sub", default="hn_big", help="出力先 data/<profile>/<sub>/<split>")
     ap.add_argument("--esn0-min", type=float, default=0.0, help="シナリオの基準 Es/N0 の下限 [dB]")
+    ap.add_argument("--awgn", default="", help="AWGN のみの Es/N0 [dB] の並び (例: 16,18,20)。与えるとランダムなシナリオの代わりに使う")
     ap.add_argument("--mend", action="store_true", help="MendNet 用 (復号した係数・状態・分散) を書く")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     a = ap.parse_args()
@@ -115,7 +115,9 @@ def main():
         nslots = max(int(dur // (a.seconds + 2)), 1)
         rng = np.random.default_rng(a.seed * 1000 + i)
         for slot in rng.permutation(nslots)[:a.segments]:
-            jobs.append((path, int(slot), a.profile, a.seconds, a.scenarios, a.seed * 100000 + i * 100 + int(slot), outdir, a.mend, a.esn0_min))
+            seed = a.seed * 100000 + i * 100 + int(slot)
+            scen = [(float(e), 0, 0.0, 1.0) for e in a.awgn.split(",")] if a.awgn else scenarios(np.random.default_rng(seed), a.scenarios, a.esn0_min)
+            jobs.append((path, int(slot), a.profile, a.seconds, scen, seed, outdir, a.mend))
     print(f"{a.profile} {a.split}: {len(jobs)} 区間 → {outdir}", flush=True)
     t0 = time.time()
     with Pool(min(a.workers, len(jobs), len(CPUS))) as pool:

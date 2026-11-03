@@ -36,6 +36,7 @@ def main():
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--bs", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
     out = a.out or os.path.join(HERE, "..", "runs", f"mendbits_{a.profile}.pt")
@@ -49,6 +50,8 @@ def main():
     nb = tr.bit_idx.shape[1]
     cfg = dict(c_in=C_IN_HINT + nb + 128, ch=192, blocks=12, c_out=nb + 64)
     net = MendNet(**cfg).to(dev)
+    if a.resume:
+        net.load_state_dict(torch.load(a.resume, map_location=dev)["model"])
     print(f"使えないフレーム 学習 {len(tr.bad)}、検証 {len(va.bad)}、ビット {nb}、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     vrng = np.random.default_rng(1)

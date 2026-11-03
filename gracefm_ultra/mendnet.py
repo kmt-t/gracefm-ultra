@@ -97,6 +97,7 @@ STEP_OFFSET = 16.0                # 刻みの特徴: (log2(刻み / 2^22) + 16) 
 LLR_SCALE = 4.0                   # 整数 LLR は自然対数の LLR の 4 倍
 STEP_WEIGHT = 0.1
 COEF_WEIGHT = 1.0
+CORR_MAX = 8.0                    # 受信 LLR があるビットの補正の上限 [nat]。受信で確かなビットを文脈で反転させない
 FLOOR_REL = 0.01                  # 係数の相対誤差の分母の下限（窓全体のエネルギーの割合）
 
 
@@ -132,10 +133,11 @@ def build_input_bits(coef, var, status, gap, comp, hint_h, hint_q, llr, dstep):
 
 def bits_out(y, llr, sf, dstep):
     """出力 y (B, NB + 64, T) → (自然対数の LLR (B,T,NB)（正 = 0 らしい）、刻みの特徴 (B,T,64))。
-    LLR は受信 LLR への補正。刻みは、復号したヘッダがあればそのまま、なければ（dstep = 0）出力"""
+    LLR は受信 LLR への補正。受信 LLR があるビットの補正は ±CORR_MAX に収める。刻みは、復号したヘッダがあればそのまま、なければ（dstep = 0）出力"""
     nb = llr.shape[-1]
     y = y.transpose(1, 2)
-    return llr.float() / LLR_SCALE + y[..., :nb], torch.where(dstep > 0, sf, y[..., nb:])
+    corr = torch.where(llr != 0, CORR_MAX * torch.tanh(y[..., :nb] / CORR_MAX), y[..., :nb])
+    return llr.float() / LLR_SCALE + corr, torch.where(dstep > 0, sf, y[..., nb:])
 
 
 def coef_error(llr, b):
@@ -168,6 +170,21 @@ def bits_loss(llr_out, step_out, b, usable):
 
     per = bce + STEP_WEIGHT * st
     return mean(per, bad) + mean(per, good) + COEF_WEIGHT * (rel(bad) + rel(good)), mean(bce, bad), mean(bce, good)
+
+
+def run_both(net, per_comp, bit_idx, bit_ok, nbit):
+    """MendNet を両成分に走らせて、フレームの全ビットに並べる。per_comp[ch]: 成分 ch の窓 (Windows.gather)。bit_idx、bit_ok: bit_index の結果 (torch)。
+    → (LLR (B,T,nbit) 整数 LLR の尺度、刻み (B,T,128) 満点 2^22 の尺度)"""
+    b0 = per_comp[0]
+    llr = torch.zeros(b0["coef"].shape[0], b0["coef"].shape[1], nbit, device=b0["coef"].device)
+    step = torch.zeros(llr.shape[0], llr.shape[1], 128, device=llr.device)
+    for ch, b in enumerate(per_comp):
+        x, _, _, sf = build_input_bits(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], b["hint_h"], b["hint_q"], b["llr"], b["dstep"])
+        l, st = bits_out(net(x), b["llr"], sf, b["dstep"])
+        ok = bit_ok[ch]
+        llr[:, :, bit_idx[ch][ok]] = (l * LLR_SCALE)[:, :, ok]
+        step[:, :, ch * 64:(ch + 1) * 64] = Q22 * 2.0 ** (st * STEP_OFFSET - STEP_OFFSET).clamp(-40, 12)
+    return llr, step
 
 
 def compose(y, coef, sig, usable, refine=False):
