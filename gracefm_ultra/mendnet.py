@@ -140,18 +140,25 @@ def bits_out(y, llr, sf, dstep):
     return llr.float() / LLR_SCALE + corr, torch.where(dstep > 0, sf, y[..., nb:])
 
 
-def coef_error(llr, b):
-    """LLR (B,T,NB)（自然対数、正 = 0）から作る仮数の期待値と真の仮数の差（Σ (p1 - b) 2^pos）に真の刻みをかけた、係数の誤差 (B,T,64)（満点 = 1.0）。
-    窓 b は Windows.gather の出力"""
+def step_of(sf):
+    """刻みの特徴 (step_feature の尺度) → 刻み（満点 = 2^22 の尺度）"""
+    return Q22 * 2.0 ** (sf * STEP_OFFSET - STEP_OFFSET).clamp(-40, 12)
+
+
+def coef_error(llr, step_out, b):
+    """出力 (LLR (B,T,NB)（自然対数、正 = 0）、刻みの特徴 (B,T,64)) から作る係数と原音の差 (B,T,64)（満点 = 1.0。量子化の誤差は除く）。
+    仮数の期待値と真の仮数の差（Σ (p1 - b) 2^pos）× 推定の刻み + 原音 ×（推定の刻み / 真の刻み − 1）。窓 b は Windows.gather の出力"""
     w = (2.0 ** b["pos"].float())[:, None, :] * b["ok"]
     diff = (torch.sigmoid(-llr) - b["bits"].float()) * w
     e = torch.zeros(diff.shape[0], diff.shape[1], 64, device=diff.device).scatter_add_(2, b["coef_of_bit"][:, None, :].expand_as(diff), diff)
-    return e * b["step"] / Q22
+    st = step_of(step_out)
+    ratio = torch.where(b["step"] > 0, st / b["step"].clamp_min(1e-9), torch.ones_like(st))
+    return e * st / Q22 + b["target"] * (ratio - 1)
 
 
 def bits_loss(llr_out, step_out, b, usable):
     """b: Windows.gather の出力（bits、ok、step、target、pos、coef_of_bit を使う）。
-    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ 係数の相対誤差（coef_error の二乗和 / 原音の二乗和）。
+    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ 係数の相対誤差（coef_error の二乗和 / 原音の二乗和。推定の刻みを使う）。
     それぞれ、使えるフレームと使えないフレームで別々に平均して足す。
     → (損失 (B,), 使えないフレームの BCE (B,), 使えるフレームの BCE (B,))"""
     okf = b["ok"].float()
@@ -160,7 +167,7 @@ def bits_loss(llr_out, step_out, b, usable):
     sf_true = step_feature(b["step"])[0]
     st = torch.nn.functional.huber_loss(step_out * STEP_OFFSET, sf_true * STEP_OFFSET, reduction="none").mean(2)
     bad, good = (~usable).float(), usable.float()
-    e2, t2 = (coef_error(llr_out, b) ** 2).sum(2), (b["target"] ** 2).sum(2)                                    # (B,T)
+    e2, t2 = (coef_error(llr_out, step_out, b) ** 2).sum(2), (b["target"] ** 2).sum(2)                                    # (B,T)
 
     def mean(v, m):
         return (v * m).sum(1) / m.sum(1).clamp_min(1)
@@ -183,7 +190,7 @@ def run_both(net, per_comp, bit_idx, bit_ok, nbit):
         l, st = bits_out(net(x), b["llr"], sf, b["dstep"])
         ok = bit_ok[ch]
         llr[:, :, bit_idx[ch][ok]] = (l * LLR_SCALE)[:, :, ok]
-        step[:, :, ch * 64:(ch + 1) * 64] = Q22 * 2.0 ** (st * STEP_OFFSET - STEP_OFFSET).clamp(-40, 12)
+        step[:, :, ch * 64:(ch + 1) * 64] = step_of(st)
     return llr, step
 
 
