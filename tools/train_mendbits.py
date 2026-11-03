@@ -36,6 +36,8 @@ def main():
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--bs", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--resident", type=int, default=0, help="学習データのうちメモリに保持する区間の数 (0 = すべて)")
+    ap.add_argument("--swap", type=int, default=8, help="--resident のとき、2000 ステップごとに入れ替える区間の数")
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
@@ -45,7 +47,7 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     rng = np.random.default_rng(0)
     d = os.path.join(a.data, a.profile, "mend")
-    tr = Windows(sorted(glob.glob(os.path.join(d, "train", "*.npz"))), dev, bits=True)
+    tr = Windows(sorted(glob.glob(os.path.join(d, "train", "*.npz"))), dev, bits=True, resident=a.resident or None, rng=rng)
     va = Windows(sorted(glob.glob(os.path.join(d, "val", "*.npz"))), dev, bits=True)
     nb = tr.bit_idx.shape[1]
     cfg = dict(c_in=C_IN_HINT + nb + 128, ch=192, blocks=12, c_out=nb + 64)
@@ -76,6 +78,8 @@ def main():
                 net.train()
             bad, good = (torch.cat([x[1] for x in v]).mean().item(), torch.cat([x[2] for x in v]).mean().item())
             print(f"step {step:5d}  {time.time() - t0:5.0f}s  loss {np.mean(run[-100:]):.4f}  検証 BCE 使えない {bad:.4f}  使える {good:.4f}", flush=True)
+        if a.resident and step % 2000 == 0:
+            tr.swap(a.swap, rng)
         if step % 500 == 0:
             torch.save({"model": net.state_dict(), "cfg": cfg, "step": step}, out)
     torch.save({"model": net.state_dict(), "cfg": cfg, "step": step}, out)

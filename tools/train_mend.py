@@ -23,36 +23,59 @@ MIN_USABLE = 10
 
 
 class Windows:
-    """全区間・全シナリオを (CPU に) 保持して、窓をバッチで切り出す"""
+    """区間・全シナリオを (CPU に) 保持して、窓をバッチで切り出す。resident を与えると、files のうち resident 本だけを保持し、
+    swap で一部を入れ替える (学習データがメモリに収まらないとき)"""
 
-    def __init__(self, files, device, bits=False):
-        self.truth, self.dec, self.var, self.status, self.gap, self.hint_h, self.hint_q = [], [], [], [], [], [], []
-        self.bits, self.llr, self.rbits, self.step, self.dstep = bits, [], [], [], []
-        self.bad = []                                              # (区間, シナリオ, フレーム) の、使えないフレーム
-        for si, f in enumerate(files):
-            z = np.load(f)
-            self.truth.append(torch.from_numpy(z["truth"]))
-            self.dec.append(torch.from_numpy(z["dec"]))
-            self.var.append(torch.from_numpy(z["var"]))
-            self.status.append(torch.from_numpy(z["status"]))
-            self.gap.append(torch.from_numpy(z["gap"]))
-            self.hint_h.append(torch.from_numpy(z["hint_h"]))
-            self.hint_q.append(torch.from_numpy(z["hint_q"]))
-            if bits:
-                self.llr.append(torch.from_numpy(z["llr"]))
-                self.rbits.append(torch.from_numpy(z["bits"]))
-                self.step.append(torch.from_numpy(z["step"]))
-                self.dstep.append(torch.from_numpy(z["dstep"]))
-                if si == 0:
-                    idx, ok = bit_index(z["coef_of_bit"])
-                    self.bit_idx, self.bit_ok = torch.from_numpy(idx), torch.from_numpy(ok)
-                    self.bit_pos = torch.from_numpy(z["pos"][idx])                       # (2, NB) 仮数内の位置 (大きいほど上位)
-                    self.bit_coef = torch.from_numpy(z["coef_of_bit"][idx] % 64)         # (2, NB) 成分内の係数の番号
-            s, fr = np.nonzero(z["status"] >= 2)
-            self.bad.append(np.stack([np.full_like(s, si), s, fr], 1))
-        self.bad = np.concatenate(self.bad)
-        self.ncomp = self.var[0].shape[2]
-        self.device = device
+    KEYS = ("truth", "dec", "var", "status", "gap", "hint_h", "hint_q")
+    BIT_KEYS = ("llr", "bits", "step", "dstep")
+
+    def __init__(self, files, device, bits=False, resident=None, rng=None):
+        self.files, self.bits, self.device = list(files), bits, device
+        keys = self.KEYS + (self.BIT_KEYS if bits else ())
+        self.data = {k: [] for k in keys}
+        self.loaded, self._bad = [], []
+        n = len(self.files) if resident is None else min(resident, len(self.files))
+        order = np.arange(len(self.files)) if resident is None else (rng or np.random.default_rng(0)).permutation(len(self.files))
+        for fi in order[:n]:
+            self._load(len(self.loaded), int(fi))
+        self._rebuild()
+        self.ncomp = self.data["var"][0].shape[2]
+
+    def _load(self, slot, fi):
+        """files[fi] を slot に読み込む (slot が末尾なら追加)"""
+        z = np.load(self.files[fi])
+        for k in self.data:
+            v = torch.from_numpy(z[k])
+            if slot == len(self.loaded):
+                self.data[k].append(v)
+            else:
+                self.data[k][slot] = v
+        if self.bits and not hasattr(self, "bit_idx"):
+            idx, ok = bit_index(z["coef_of_bit"])
+            self.bit_idx, self.bit_ok = torch.from_numpy(idx), torch.from_numpy(ok)
+            self.bit_pos = torch.from_numpy(z["pos"][idx])                       # (2, NB) 仮数内の位置 (大きいほど上位)
+            self.bit_coef = torch.from_numpy(z["coef_of_bit"][idx] % 64)         # (2, NB) 成分内の係数の番号
+        s, fr = np.nonzero(z["status"] >= 2)
+        bad = np.stack([np.full_like(s, slot), s, fr], 1)
+        if slot == len(self.loaded):
+            self.loaded.append(fi)
+            self._bad.append(bad)
+        else:
+            self.loaded[slot] = fi
+            self._bad[slot] = bad
+
+    def _rebuild(self):
+        self.bad = np.concatenate(self._bad)                       # (区間, シナリオ, フレーム) の、使えないフレーム
+        self.truth, self.dec, self.var, self.status = self.data["truth"], self.data["dec"], self.data["var"], self.data["status"]
+
+    def swap(self, k, rng):
+        """保持している区間のうち k 本を、保持していない区間と入れ替える"""
+        out = [i for i in range(len(self.files)) if i not in set(self.loaded)]
+        if not out:
+            return
+        for slot, fi in zip(rng.choice(len(self.loaded), min(k, len(out)), replace=False), rng.choice(out, min(k, len(out)), replace=False)):
+            self._load(int(slot), int(fi))
+        self._rebuild()
 
     def locate(self, bs, rng, anywhere=False):
         """窓の位置 [(区間, シナリオ, 先頭フレーム), …] を bs 個選ぶ"""
@@ -73,20 +96,20 @@ class Windows:
         out = {k: [] for k in keys}
         for (si, sc, a), ch in zip(locs, comps):
             sl = slice(ch * 64, ch * 64 + 64)
-            out["coef"].append(self.dec[si][sc, a:a + WIN, sl])
-            out["target"].append(self.truth[si][a:a + WIN, sl])
-            out["var"].append(self.var[si][sc, a:a + WIN, ch])
-            out["status"].append(self.status[si][sc, a:a + WIN])
-            out["gap"].append(self.gap[si][sc, a:a + WIN])
-            out["hint_h"].append(self.hint_h[si][sc, a:a + WIN, sl])
-            out["hint_q"].append(self.hint_q[si][sc, a:a + WIN, ch])
+            out["coef"].append(self.data["dec"][si][sc, a:a + WIN, sl])
+            out["target"].append(self.data["truth"][si][a:a + WIN, sl])
+            out["var"].append(self.data["var"][si][sc, a:a + WIN, ch])
+            out["status"].append(self.data["status"][si][sc, a:a + WIN])
+            out["gap"].append(self.data["gap"][si][sc, a:a + WIN])
+            out["hint_h"].append(self.data["hint_h"][si][sc, a:a + WIN, sl])
+            out["hint_q"].append(self.data["hint_q"][si][sc, a:a + WIN, ch])
             out["comp"].append(torch.tensor(ch))
             if self.bits:
                 bi = self.bit_idx[ch]
-                out["llr"].append(self.llr[si][sc, a:a + WIN][:, bi] * self.bit_ok[ch])
-                out["bits"].append(self.rbits[si][a:a + WIN][:, bi])
-                out["dstep"].append(self.dstep[si][sc, a:a + WIN, sl])
-                out["step"].append(self.step[si][a:a + WIN, sl])
+                out["llr"].append(self.data["llr"][si][sc, a:a + WIN][:, bi] * self.bit_ok[ch])
+                out["bits"].append(self.data["bits"][si][a:a + WIN][:, bi])
+                out["dstep"].append(self.data["dstep"][si][sc, a:a + WIN, sl])
+                out["step"].append(self.data["step"][si][a:a + WIN, sl])
         batch = {k: torch.stack(v).to(self.device) for k, v in out.items()}
         if self.bits:
             batch["ok"] = self.bit_ok.to(self.device)[batch["comp"]][:, None, :]

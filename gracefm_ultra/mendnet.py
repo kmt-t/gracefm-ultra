@@ -96,9 +96,10 @@ Q22 = float(1 << 22)
 STEP_OFFSET = 16.0                # 刻みの特徴: (log2(刻み / 2^22) + 16) / 16
 LLR_SCALE = 4.0                   # 整数 LLR は自然対数の LLR の 4 倍
 STEP_WEIGHT = 0.1
-COEF_WEIGHT = 1.0
+COEF_WEIGHT = 10.0
 CORR_MAX = 8.0                    # 受信 LLR があるビットの補正の上限 [nat]。受信で確かなビットを文脈で反転させない
 FLOOR_REL = 0.01                  # 係数の相対誤差の分母の下限（窓全体のエネルギーの割合）
+FLOOR_ABS = 1e-8                  # 同じく、係数 1 個あたりの絶対の下限（−80 dBFS）。無音の窓で相対誤差が発散しないように
 
 
 def bit_index(coef_of_bit):
@@ -141,8 +142,8 @@ def bits_out(y, llr, sf, dstep):
 
 
 def step_of(sf):
-    """刻みの特徴 (step_feature の尺度) → 刻み（満点 = 2^22 の尺度）"""
-    return Q22 * 2.0 ** (sf * STEP_OFFSET - STEP_OFFSET).clamp(-40, 12)
+    """刻みの特徴 (step_feature の尺度) → 刻み（満点 = 2^22 の尺度）。実際の刻み (満点の 2^-20〜2^-6) より少し広い範囲に収める"""
+    return Q22 * 2.0 ** (sf * STEP_OFFSET - STEP_OFFSET).clamp(-22, -4)
 
 
 def coef_error(llr, step_out, b):
@@ -158,7 +159,7 @@ def coef_error(llr, step_out, b):
 
 def bits_loss(llr_out, step_out, b, usable):
     """b: Windows.gather の出力（bits、ok、step、target、pos、coef_of_bit を使う）。
-    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ 係数の相対誤差（coef_error の二乗和 / 原音の二乗和。推定の刻みを使う）。
+    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ log(1 + 係数の相対誤差)（相対誤差 = coef_error の二乗和 /（原音 + 量子化の雑音）の二乗和。推定の刻みを使う）。
     それぞれ、使えるフレームと使えないフレームで別々に平均して足す。
     → (損失 (B,), 使えないフレームの BCE (B,), 使えるフレームの BCE (B,))"""
     okf = b["ok"].float()
@@ -168,15 +169,17 @@ def bits_loss(llr_out, step_out, b, usable):
     st = torch.nn.functional.huber_loss(step_out * STEP_OFFSET, sf_true * STEP_OFFSET, reduction="none").mean(2)
     bad, good = (~usable).float(), usable.float()
     e2, t2 = (coef_error(llr_out, step_out, b) ** 2).sum(2), (b["target"] ** 2).sum(2)                                    # (B,T)
+    q2 = ((b["step"] / Q22) ** 2).sum(2) / 12 + FLOOR_ABS * b["step"].shape[-1]                                      # 量子化の雑音 + 絶対の下限 (B,T)
 
     def mean(v, m):
         return (v * m).sum(1) / m.sum(1).clamp_min(1)
 
     def rel(m):
-        return (e2 * m).sum(1) / ((t2 * m).sum(1) + FLOOR_REL * t2.sum(1) + 1e-9)
+        return (e2 * m).sum(1) / (((t2 + q2) * m).sum(1) + FLOOR_REL * t2.sum(1) + 1e-9)
 
     per = bce + STEP_WEIGHT * st
-    return mean(per, bad) + mean(per, good) + COEF_WEIGHT * (rel(bad) + rel(good)), mean(bce, bad), mean(bce, good)
+    coef = torch.log1p(rel(bad)) + torch.log1p(rel(good))                                                              # 小さいときは相対誤差、大外れの窓は対数で抑える
+    return mean(per, bad) + mean(per, good) + COEF_WEIGHT * coef, mean(bce, bad), mean(bce, good)
 
 
 def run_both(net, per_comp, bit_idx, bit_ok, nbit):
