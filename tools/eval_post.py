@@ -87,7 +87,7 @@ def eval_bands(files, net, tf, dev):
         for k in methods:
             s = acc[(b, k)]
             cols.append(f"{k} {10 * np.log10(s[0] / s[1]):+6.2f} / {10 * np.log10(s[2] / s[0]):+5.2f} / {np.sqrt(s[3] / s[4]):5.2f}")
-        print(f"{b[0] / 1000:4.0f}-{b[1] / 1000:<4.0f}  " + "   ".join(cols))
+        print(f"{b[0] // 1000}-{b[1] // 1000:<3d}" + "   ".join(cols))
 
 
 def lr(w):
