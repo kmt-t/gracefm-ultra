@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 PostNet (MDCT 領域の超解像) の評価。各シナリオを丸ごと (約 20 秒) 処理し、MendNet の出力 (PostNet の入力) と比べる。
-- 既定: data/<profile>/post/val で、使えないフレームの SNR [dB] を使えない連続区間の長さごとに、使えるフレームの SNR (時間領域、M と S の合計)。
+- 既定: data/<profile>/post/val で、帯域ごとの SNR、エネルギーの比、対数スペクトル距離 (MDCT 領域、M と S の合計)。
 - --awgn: data/<profile>/post/awgn_val で、音声 (ステレオ 32 kHz) の SNR (全体)、PSNR (区間の平均)、ViSQOL (区間の平均) を Es/N0 ごとに。
   復号のまま (data/<profile>/mend_awgn/val の dec) も並べる。
 
   .venv/bin/python tools/eval_post.py --ckpt runs/post_B200.pt
   .venv/bin/python tools/eval_post.py --ckpt runs/post_B200.pt --awgn
+  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200.pt --match Chopin,Scarlatti,Kimiko   # ピアノだけ
 """
 import argparse
 import glob
@@ -23,8 +24,8 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
-from gracefm_ultra.postnet import FRAME, M, PostNet, Transform  # noqa: E402
-from eval_mendnet import BUCKETS, CN_OFFSET, runs_of, visqol  # noqa: E402
+from gracefm_ultra.postnet import M, PostNet, Transform  # noqa: E402
+from eval_mendnet import CN_OFFSET, visqol  # noqa: E402
 
 
 def load(path, dev):
@@ -52,31 +53,41 @@ def wave_of(coef, tf):
     return tf.wave(c).numpy()
 
 
-def eval_gaps(files, net, tf, dev):
+BANDS = [(0, 2000), (2000, 4000), (4000, 8000), (8000, 12000), (12000, 16000)]   # [Hz]
+LSD_FLOOR = 1e-10                                                                   # 対数スペクトル距離のパワーの下限 (ビン 1 個あたり)
+
+
+def eval_bands(files, net, tf, dev):
+    """帯域ごとに、SNR、出力と原音のエネルギーの比、対数スペクトル距離 (MDCT のビン×フレームの RMS) を、M と S の合計で"""
     methods = ["MendNet", "PostNet"]
-    acc, keep = {}, {m: [0.0, 0.0] for m in methods}
+    hz = (np.arange(M) + 0.5) * 16000 / M
+    acc = {(b, k): [0.0, 0.0, 0.0, 0.0, 0] for b in BANDS for k in methods}   # 原音、誤差、出力、LSD の二乗和、数
     tfc = Transform()
     for f in files:
         z = np.load(f)
-        ref = wave_of(z["truth"], tfc)
-        rf = (ref ** 2).reshape(2, -1, FRAME).sum((0, 2))
+        R = tfc.mdct(torch.from_numpy(wave_of(z["truth"], tfc))).numpy()
         for sc in range(z["e0"].shape[0]):
             out = process(net, tf, z["e0"][sc], z["sd"][sc], dev)
-            us = z["status"][sc] <= 1
-            run = runs_of(us)
             for k in methods:
-                ef = ((out[k] - ref) ** 2).reshape(2, -1, FRAME).sum((0, 2))
-                keep[k][0] += rf[us].sum()
-                keep[k][1] += ef[us].sum()
-                for name, lo, hi in BUCKETS:
-                    m = (~us) & (run >= lo) & (run <= hi)
-                    s = acc.setdefault((name, k), [0.0, 0.0])
-                    s[0] += rf[m].sum()
-                    s[1] += ef[m].sum()
+                Y = tfc.mdct(torch.from_numpy(out[k])).numpy()
+                for b in BANDS:
+                    sel = (hz >= b[0]) & (hz < b[1])
+                    r, y = R[:, sel], Y[:, sel]
+                    d = 10 * np.log10((y ** 2 + LSD_FLOOR) / (r ** 2 + LSD_FLOOR))
+                    s = acc[(b, k)]
+                    s[0] += (r ** 2).sum()
+                    s[1] += ((y - r) ** 2).sum()
+                    s[2] += (y ** 2).sum()
+                    s[3] += (d ** 2).sum()
+                    s[4] += d.size
         print(f"  {os.path.basename(f)}", flush=True)
-    for name, _, _ in BUCKETS:
-        print(f"{name:10s}", "  ".join(f"{k} {10 * np.log10(acc[(name, k)][0] / max(acc[(name, k)][1], 1e-30)):+6.2f} dB" for k in methods))
-    print("使えるフレーム", "  ".join(f"{k} {10 * np.log10(v[0] / v[1]):+6.2f} dB" for k, v in keep.items()))
+    print("帯域 [kHz]    SNR [dB] / エネルギー比 [dB] / 対数スペクトル距離 [dB]")
+    for b in BANDS:
+        cols = []
+        for k in methods:
+            s = acc[(b, k)]
+            cols.append(f"{k} {10 * np.log10(s[0] / s[1]):+6.2f} / {10 * np.log10(s[2] / s[0]):+5.2f} / {np.sqrt(s[3] / s[4]):5.2f}")
+        print(f"{b[0] / 1000:4.0f}-{b[1] / 1000:<4.0f}  " + "   ".join(cols))
 
 
 def lr(w):
@@ -123,6 +134,7 @@ def main():
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--awgn", action="store_true")
+    ap.add_argument("--match", default="", help="区間のファイル名にこのどれかを含むものだけ (カンマ区切り。例: Chopin,Scarlatti,Kimiko)")
     a = ap.parse_args()
     pin()
     torch.set_num_threads(len(CPUS))
@@ -130,10 +142,13 @@ def main():
     net = load(a.ckpt, dev)
     tf = Transform().to(dev)
     d = os.path.join(a.data, a.profile)
+    keys = [k for k in a.match.split(",") if k]
+    pick = lambda sub: [f for f in sorted(glob.glob(os.path.join(d, "post", sub, "*.npz")))  # noqa: E731
+                        if not keys or any(k in os.path.basename(f) for k in keys)]
     if a.awgn:
-        eval_awgn(sorted(glob.glob(os.path.join(d, "post", "awgn_val", "*.npz"))), os.path.join(d, "mend_awgn", "val"), net, tf, dev)
+        eval_awgn(pick("awgn_val"), os.path.join(d, "mend_awgn", "val"), net, tf, dev)
     else:
-        eval_gaps(sorted(glob.glob(os.path.join(d, "post", "val", "*.npz"))), net, tf, dev)
+        eval_bands(pick("val"), net, tf, dev)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 """
 PostNet (MDCT 領域の超解像) の学習。data/<profile>/post/{train,val} (gen_post.py) の、確定した MendNet の出力から切り出す。
 切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
-損失は postnet.post_loss (MDCT の log(1 + 相対誤差) + 複数解像度の対数振幅)。
+損失は postnet.post_loss (帯域ごとの相対誤差の対数 + 複数解像度の対数振幅)。
 
   .venv/bin/python tools/train_post.py --profile B200 --minutes 120 --out runs/post_B200.pt
 """
@@ -23,6 +23,7 @@ from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, post_loss, recep
 F = 192                                   # MDCT のフレーム数
 CROP = (F + 1) * M // FRAME               # Haar のフレーム数
 SKIP = 96
+HIGH = 64                                 # 検証で別に見る高い帯域の下端のビン (4 kHz)
 assert SKIP >= receptive_past()
 
 
@@ -61,13 +62,13 @@ class Crops:
 
 
 def forward(net, tf, b):
-    """→ (損失 (N,), 二乗和 (推定の誤差、入力の誤差、原音) (3,))。二乗和は先頭 SKIP フレームを除く"""
+    """→ (損失 (N,), 二乗和 (推定の誤差、入力の誤差、原音) × (全帯域、HIGH 以上) (6,))。二乗和は先頭 SKIP フレームを除く"""
     e0, sd, truth, _, comp = b
     X, var, T = tf.mdct(tf.wave(e0)), tf.mdct_var(tf.wave_var(sd)), tf.mdct(tf.wave(truth))
     Y = net(X, var, comp)
-    loss, _ = post_loss(tf, Y, T, SKIP)
-    sq = lambda v: (v[:, :, SKIP:] ** 2).sum().item()  # noqa: E731
-    return loss, np.array([sq(Y - T), sq(X - T), sq(T)])
+    loss = post_loss(tf, Y, T, SKIP)
+    sq = lambda v, a: (v[:, a:, SKIP:] ** 2).sum().item()  # noqa: E731
+    return loss, np.array([sq(v, a) for a in (0, HIGH) for v in (Y - T, X - T, T)])
 
 
 def main():
@@ -115,9 +116,11 @@ def main():
                 net.eval()
                 v = [forward(net, tf, b) for b in vb]
                 net.train()
-            e, e_in, t2 = sum(x[1] for x in v)
-            print(f"step {step:6d}  {time.time() - t0:5.0f}s  loss {np.mean(run[-200:]):.4f}  検証 SNR 入力 {10 * np.log10(t2 / e_in):+.2f} dB → {10 * np.log10(t2 / e):+.2f} dB",
-                  flush=True)
+            vl = np.mean([x[0].mean().item() for x in v])
+            e, e_in, t2, he, he_in, ht2 = sum(x[1] for x in v)
+            db = lambda t, e: 10 * np.log10(t / e)  # noqa: E731
+            print(f"step {step:6d}  {time.time() - t0:5.0f}s  loss {np.mean(run[-200:]):.4f}  検証 loss {vl:.4f}  SNR 入力 {db(t2, e_in):+.2f} → {db(t2, e):+.2f} dB"
+                  f"  4 kHz 以上 {db(ht2, he_in):+.2f} → {db(ht2, he):+.2f} dB", flush=True)
         if step % 1000 == 0:
             torch.save({"model": net.state_dict(), "cfg": cfg, "step": step}, out)
     torch.save({"model": net.state_dict(), "cfg": cfg, "step": step}, out)
