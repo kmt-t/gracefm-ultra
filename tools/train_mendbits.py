@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MendNet (ビット出力版) の学習。復号した係数・状態・hint と受信 LLR から、全フレームの仮数ビットの LLR と刻み (ヘッダ) を出す。
-損失は、真のビットに対する BCE + 刻み (log2) の Huber。使えるフレームと使えないフレームを別々に平均する。
+MendNet の学習。復号した係数・状態・hint と受信 LLR から、全フレームの仮数ビットの LLR と刻み (ヘッダ) を出す。
+損失は mendnet.bits_loss (ビットの BCE + 刻みの Huber + 係数の相対誤差)。使えるフレームと使えないフレームを別々に平均する。
 data/<profile>/mend/{train,val} (gen_hn.py --mend) を使う。
 
   .venv/bin/python tools/train_mendbits.py --profile B200 --minutes 30 --out runs/mendbits_B200.pt
@@ -20,7 +20,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm_ultra.mendnet import C_IN_HINT, MendNet, bits_loss, bits_out, build_input_bits  # noqa: E402
-from train_mend import Windows  # noqa: E402
+from mend_windows import Windows  # noqa: E402
 
 
 def forward(net, b):
@@ -47,8 +47,8 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     rng = np.random.default_rng(0)
     d = os.path.join(a.data, a.profile, "mend")
-    tr = Windows(sorted(glob.glob(os.path.join(d, "train", "*.npz"))), dev, bits=True, resident=a.resident or None, rng=rng)
-    va = Windows(sorted(glob.glob(os.path.join(d, "val", "*.npz"))), dev, bits=True)
+    tr = Windows(sorted(glob.glob(os.path.join(d, "train", "*.npz"))), dev, resident=a.resident or None, rng=rng)
+    va = Windows(sorted(glob.glob(os.path.join(d, "val", "*.npz"))), dev)
     nb = tr.bit_idx.shape[1]
     cfg = dict(c_in=C_IN_HINT + nb + 128, ch=192, blocks=12, c_out=nb + 64)
     net = MendNet(**cfg).to(dev)

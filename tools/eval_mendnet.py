@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MendNet (ビット出力版) の評価。MendNet の係数は、出力の LLR から作る仮数の期待値 × 刻み (E0、haarnet.soft_e0)。怪しさは、その事後標準偏差。
-比べる相手は、復号のまま・AR 補間・旧 MendNet (係数を出す版、--old)。
+MendNet の評価。MendNet の係数は、出力の LLR から作る仮数の期待値 × 刻み (E0、haarnet.soft_e0)。怪しさは、その事後標準偏差。
+比べる相手は、復号のまま・AR 補間 (時間領域の両側補間)。
 
 - 既定: 検証データ (data/<profile>/mend/val) の窓で、使えないフレームの SNR [dB] を使えない連続区間の長さごとに、使えるフレームの SNR、
   怪しさと実際の誤差の順位相関 (フレームごと) を出す。
@@ -10,8 +10,8 @@ MendNet (ビット出力版) の評価。MendNet の係数は、出力の LLR �
   指標は SNR (全体)、PSNR (満点 ±1、区間ごとの平均)、ViSQOL (audio モード、48 kHz に変換、区間ごとの平均) を Es/N0 ごとに。
   C/N0 [dB-Hz] は Es/N0 + 50 (B200 の換算)。
 
-  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendbits_B200_v4.pt --old runs/mend_B200_v2r.pt
-  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendbits_B200_v4.pt --old runs/mend_B200_v2r.pt --awgn
+  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendbits_B200_v9.pt
+  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendbits_B200_v9.pt --awgn
 """
 import argparse
 import glob
@@ -28,37 +28,35 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
-from eval_mend import BUCKETS, ar_fill  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.haarnet import make_meta, soft_e0  # noqa: E402
-from gracefm_ultra.mendnet import Q22, WIN, MendNet, build_input, compose, haar_inv, run_both  # noqa: E402
+from gracefm_ultra.mendnet import Q22, WIN, MendNet, haar_fwd, haar_inv, run_both  # noqa: E402
+from gracefm_ultra.plc_ar import interpolate  # noqa: E402
 from tools.common import wavio  # noqa: E402
-from train_mend import Windows  # noqa: E402
+from mend_windows import Windows  # noqa: E402
 
 FS = 32000
 HOP = WIN // 2
 CN_OFFSET = 50.0
+BUCKETS = [("連続1", 1, 1), ("連続2-3", 2, 3), ("連続4-8", 4, 8), ("連続9-25", 9, 25), ("連続26以上", 26, 10**9)]
+METHODS = ["復号のまま", "MendNet"]
 
 
 def load(path, dev):
     ck = torch.load(path, map_location=dev)
     net = MendNet(**ck["cfg"]).to(dev).eval()
     net.load_state_dict(ck["model"])
-    return net, ck
+    return net
 
 
-def coefs(win, locs, net, old, oc, meta):
-    """窓 locs の係数 (B,T,128) 満点 1.0: {"復号のまま", "旧MendNet", "MendNet"} と、MendNet の事後標準偏差 (B,T,128)、状態 (B,T)、原音"""
+def coefs(win, locs, net, meta):
+    """窓 locs の係数 (B,T,128) 満点 1.0: {"復号のまま", "MendNet"} と、MendNet の事後標準偏差 (B,T,128)、状態 (B,T)、原音"""
     per = [win.gather(locs, [ch] * len(locs)) for ch in range(2)]
     with torch.no_grad():
         llr, step = run_both(net, per, win.bit_idx.to(win.device), win.bit_ok.to(win.device), meta.nbit)
         e0, sd = soft_e0(llr, step, meta)
-        parts = []
-        for b in per:
-            x, sig, usable = build_input(b["coef"], b["var"], b["status"].long(), b["gap"], b["comp"], b["hint_h"], b["hint_q"])
-            parts.append(compose(old(x), b["coef"], sig, usable, oc.get("refine", False)))
     cat = lambda k: torch.cat([per[0][k], per[1][k]], -1)  # noqa: E731
-    out = {"復号のまま": cat("coef"), "旧MendNet": torch.cat(parts, -1), "MendNet": e0 / Q22}
+    out = {"復号のまま": cat("coef"), "MendNet": e0 / Q22}
     return {k: v.cpu().numpy() for k, v in out.items()}, (sd / Q22).cpu().numpy(), per[0]["status"].cpu().numpy(), cat("target").cpu().numpy()
 
 
@@ -78,18 +76,32 @@ def runs_of(us):
     return run
 
 
+def ar_fill(coef, usable):
+    """窓の係数 (T,64) の、使えないフレームを、時間領域の AR 両側補間で埋める"""
+    x = haar_inv(coef).reshape(-1)
+    run = runs_of(usable)
+    i = 0
+    while i < len(usable):
+        if run[i]:
+            x[i * 64:(i + run[i]) * 64] = interpolate(x, i * 64, (i + run[i]) * 64)
+            i += run[i]
+        else:
+            i += 1
+    return haar_fwd(x.reshape(-1, 64))
+
+
 def rank_corr(a, b):
     ra, rb = np.argsort(np.argsort(a)), np.argsort(np.argsort(b))
     return float(np.corrcoef(ra, rb)[0, 1])
 
 
-def eval_windows(va, net, old, oc, meta, n):
-    methods = ["AR", "旧MendNet", "MendNet"]
-    acc, keep = {}, {m: [0.0, 0.0] for m in ["復号のまま", "旧MendNet", "MendNet"]}
+def eval_windows(va, net, meta, n):
+    methods = ["AR", "MendNet"]
+    acc, keep = {}, {m: [0.0, 0.0] for m in METHODS}
     unc, err = [], []
     rng = np.random.default_rng(7)
     for _ in range(n):
-        out, sd, status, t = coefs(va, va.locate(1, rng), net, old, oc, meta)
+        out, sd, status, t = coefs(va, va.locate(1, rng), net, meta)
         out, sd, t = {k: v[0] for k, v in out.items()}, sd[0], t[0]
         us = status[0] <= 1
         run = runs_of(us)
@@ -135,7 +147,7 @@ def to_audio(c):
     return np.stack([m + s, m - s], 1)
 
 
-def stream(va, si, sc, net, old, oc, meta, chunk=32):
+def stream(va, si, sc, net, meta, chunk=32):
     """シナリオ (si, sc) を窓でつないで復元する。→ ({方法: 係数 (N,128)}、原音 (N,128))"""
     n = va.truth[si].shape[0]
     starts = list(range(0, n - WIN + 1, HOP))
@@ -143,7 +155,7 @@ def stream(va, si, sc, net, old, oc, meta, chunk=32):
     res, ref = {}, np.zeros((a1 - a0, 128), np.float32)
     for i in range(0, len(starts), chunk):
         locs = [(si, sc, a) for a in starts[i:i + chunk]]
-        out, _, _, t = coefs(va, locs, net, old, oc, meta)
+        out, _, _, t = coefs(va, locs, net, meta)
         for j, (_, _, a) in enumerate(locs):
             lo, mid = a + WIN // 4 - a0, slice(WIN // 4, WIN // 4 + HOP)
             for k, v in out.items():
@@ -152,14 +164,14 @@ def stream(va, si, sc, net, old, oc, meta, chunk=32):
     return res, ref
 
 
-def eval_awgn(va, files, net, old, oc, meta):
-    methods = ["復号のまま", "旧MendNet", "MendNet"]
+def eval_awgn(va, files, net, meta):
+    methods = METHODS
     acc = {}
     with Pool(len(CPUS), initializer=pin) as pool:
         for si, f in enumerate(files):
             jobs, keys = [], []
             for sc, e0 in enumerate(np.load(f)["scen"][:, 0]):
-                out, t = stream(va, si, sc, net, old, oc, meta)
+                out, t = stream(va, si, sc, net, meta)
                 ref = to_audio(t)
                 for k in methods:
                     y = to_audio(out[k])
@@ -185,8 +197,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", default="B200")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
-    ap.add_argument("--ckpt", required=True, help="MendNet (ビット出力版) のチェックポイント")
-    ap.add_argument("--old", required=True, help="旧 MendNet (係数を出す版) のチェックポイント")
+    ap.add_argument("--ckpt", required=True, help="MendNet のチェックポイント")
     ap.add_argument("--awgn", action="store_true", help="AWGN のみの検証データ (data/<profile>/mend_awgn/val) を音声で評価する")
     ap.add_argument("--windows", type=int, default=1500)
     a = ap.parse_args()
@@ -194,15 +205,14 @@ def main():
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     files = sorted(glob.glob(os.path.join(a.data, a.profile, "mend_awgn" if a.awgn else "mend", "val", "*.npz")))
-    va = Windows(files, dev, bits=True)
+    va = Windows(files, dev)
     z = np.load(files[0])
     meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit", "group")}, PROFILES[a.profile]).to(dev)
-    net, _ = load(a.ckpt, dev)
-    old, oc = load(a.old, dev)
+    net = load(a.ckpt, dev)
     if a.awgn:
-        eval_awgn(va, files, net, old, oc, meta)
+        eval_awgn(va, files, net, meta)
     else:
-        eval_windows(va, net, old, oc, meta, a.windows)
+        eval_windows(va, net, meta, a.windows)
 
 
 if __name__ == "__main__":

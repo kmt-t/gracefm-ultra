@@ -17,7 +17,7 @@
 
 - `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、HaarNet（`haarnet.py`）、MendNet（`mendnet.py`）、IIR切替（`iir_switch.py`）
 - `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）
-- `tools/`: データ生成（`gen_hn.py`、Rust の `engine/gfm-gen`）、学習（`train_haarnet.py`、`train_mend.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
+- `tools/`: データ生成（`gen_hn.py`、Rust の `engine/gfm-gen`）、学習（`train_haarnet.py`、`train_mendbits.py`）、評価（`eval_*.py`、`baseline.py`）、デモ・測定
 - `runs/`: 学習・評価のスクリプトとログ（モデルと一部ログは git 管理外）
 
 ## 設計

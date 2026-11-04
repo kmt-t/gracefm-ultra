@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MendNet (ビット出力版) の評価。検証データの窓で、フレームの状態 (使える・壊れた・欠落) ごとに、受信 LLR のまま (基準) と比べる。
+MendNet のビットと刻みの評価。検証データの窓で、フレームの状態 (使える・壊れた・欠落) ごとに、受信 LLR のまま (基準) と比べる。
 - 係数の SNR [dB]: ビットの確率から作る仮数の期待値と真の仮数の差 (Σ (p1 - b) 2^pos) × 刻み を、原音の係数 (真の刻みを使う) と比べる。音声としての誤り
 - 仮数の上位ビット (最上位から 1〜3 番目) のビット誤り率
 - 刻み (ヘッダ): log2 の誤差の絶対値の平均と、指数が合う割合
@@ -20,7 +20,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm_ultra.mendnet import STEP_OFFSET, MendNet, bits_out, build_input_bits, step_feature  # noqa: E402
-from train_mend import Windows  # noqa: E402
+from mend_windows import Windows  # noqa: E402
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
     pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    va = Windows(sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz"))), dev, bits=True)
+    va = Windows(sorted(glob.glob(os.path.join(a.data, a.profile, "mend", "val", "*.npz"))), dev)
     ck = torch.load(a.ckpt, map_location=dev)
     net = MendNet(**ck["cfg"]).to(dev).eval()
     net.load_state_dict(ck["model"])
