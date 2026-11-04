@@ -4,7 +4,7 @@ MDCT 領域に移した雑音の地図と合わせて、原音の MDCT 係数を
 
 - MDCT: 窓長 2M = 512、ホップ M = 256 (32 kHz で 8 ms)、サイン窓、直交 (TDAC で完全再構成)。Conv1d / ConvTranspose1d で組む。
 - 雑音の地図: Haar の係数の誤差を互いに独立とみなし、分散を線形変換の二乗で移す (時間領域 → MDCT 領域)。
-- 網: MDCT フレーム列の TCN。先読みは最初の 2 段 (各 1 フレーム) だけで、残りは因果。出力は各ビンのゲイン g と足し込む量 a:
+- 網: MDCT フレーム列の TCN (正規化はフレームごと)。先読みは最初の 2 段 (各 1 フレーム) だけで、残りは因果。出力は各ビンのゲイン g と足し込む量 a:
   Y = 2 sigmoid(g) X + a √(雑音の分散)。初期値は恒等 (Y = X)。
 """
 import numpy as np
@@ -64,6 +64,20 @@ class Transform(nn.Module):
         return nn.functional.conv_transpose1d(X, self.B, stride=M)[:, 0]
 
 
+class FrameNorm(nn.Module):
+    """フレームごとに、チャンネル方向で正規化する (時間方向の統計を使わないので、因果で、系列の長さによらない)"""
+
+    def __init__(self, ch):
+        super().__init__()
+        self.g = nn.Parameter(torch.ones(1, ch, 1))
+        self.b = nn.Parameter(torch.zeros(1, ch, 1))
+
+    def forward(self, x):
+        m = x.mean(1, keepdim=True)
+        v = ((x - m) ** 2).mean(1, keepdim=True)
+        return (x - m) / torch.sqrt(v + 1e-5) * self.g + self.b
+
+
 def features(X, var, comp):
     """→ (N, 2M + 1, F)"""
     fx = torch.asinh(X / X_SCALE) / 8
@@ -77,7 +91,7 @@ class PostNet(nn.Module):
         super().__init__()
         self.dil, self.lookahead = list(dil), lookahead
         self.inp = nn.Conv1d(2 * M + 1, ch, 1)
-        self.norms = nn.ModuleList([nn.GroupNorm(1, ch) for _ in dil])
+        self.norms = nn.ModuleList([FrameNorm(ch) for _ in dil])
         self.c1 = nn.ModuleList([nn.Conv1d(ch, ch, 3, dilation=d) for d in dil])
         self.c2 = nn.ModuleList([nn.Conv1d(ch, ch, 1) for _ in dil])
         self.act = nn.GELU()
