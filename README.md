@@ -24,7 +24,8 @@
 
 設計への影響:
 - 受信の DSP の入力は、8 bit の I/Q で 2.4 MS/s 以下とする。
-- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は、このデバイスに合わせる（8 bit）。
+- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は 12 bit のままとし、8 bit との差は C/N0 に 1 dB の下駄を履かせて見込む。実機の C/N0 66〜80 dB-Hz（実用帯）は、モデルの Es/N0 15〜29 dB（B200）に当たる。
+- 下駄の根拠: 実効 7 bit、AGC の余裕 10 dB として、2.4 MS/s 全体の量子化の SNR は約 34 dB。B200 のシンボル帯域（100 kBd）では Es/N0 約 48 dB に当たり、実用帯の上端（Es/N0 30 dB）でも劣化は 0.1 dB に満たない。1 dB はその上の余裕。
 
 ## baseline
 
