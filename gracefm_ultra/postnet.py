@@ -21,7 +21,7 @@ from .haarnet import haar_matrix
 M = 256                               # MDCT のビン数 = ホップ
 A_MAX = 2.0                           # 足し込む量の上限 (事後標準偏差の倍数)
 GATE_WIN = 500                        # 切り替えの判定の平滑化 [Haar フレーム] (過去 1 秒)
-GATE_SNR = 24.0                       # 予測の SNR がこれ以上なら超解像をかける [dB] (B200 の AWGN で Es/N0 16 = C/N0 66 がほぼ全部オン)
+GATE_SNR = 27.5                       # 予測の SNR がこれ以上なら超解像をかける [dB] (B200 の AWGN で Es/N0 18 = C/N0 68 でオンが半分、20 で 9 割、22 以上で全部)
 FRAME = 64                            # Haar のフレーム長 [サンプル]
 X_SCALE = 1e-4                        # 係数の特徴: asinh(X / X_SCALE) / 8
 DIL = [1, 1, 2, 4, 8, 1, 2, 4, 8, 16]
