@@ -5,7 +5,7 @@ MDCT 領域に移した雑音の地図と合わせて、原音の MDCT 係数を
 - MDCT: 窓長 2M = 512、ホップ M = 256 (32 kHz で 8 ms)、サイン窓、直交 (TDAC で完全再構成)。Conv1d / ConvTranspose1d で組む。
 - 雑音の地図: Haar の係数の誤差を互いに独立とみなし、分散を線形変換の二乗で移す (時間領域 → MDCT 領域)。
 - 網: MDCT フレーム列の TCN (正規化はフレームごと)。先読みは最初の 2 段 (各 1 フレーム) だけで、残りは因果。出力は各ビンのゲイン g と足し込む量 a:
-  Y = 2 sigmoid(g) X + a √(雑音の分散)。初期値は恒等 (Y = X)。
+  Y = 2 sigmoid(g) X + A_MAX tanh(a) √(雑音の分散)。足し込みは事後標準偏差の A_MAX 倍まで。初期値は恒等 (Y = X)。
 - 対象: 元の音質が良いときだけ。MendNet の事後標準偏差から出す予測の SNR (過去 1 秒の使えるフレームの、係数の二乗和 / 分散の和) が
   GATE_SNR 以上のフレーム。欠落は MendNet が埋めたものを含める。オフのフレームは MendNet の出力のまま (MDCT のフレームごとに切り替え、
   窓の重なりでつながる)。
@@ -19,6 +19,7 @@ from torch import nn
 from .haarnet import haar_matrix
 
 M = 256                               # MDCT のビン数 = ホップ
+A_MAX = 2.0                           # 足し込む量の上限 (事後標準偏差の倍数)
 GATE_WIN = 500                        # 切り替えの判定の平滑化 [Haar フレーム] (過去 1 秒)
 GATE_SNR = 24.0                       # 予測の SNR がこれ以上なら超解像をかける [dB] (B200 の AWGN で Es/N0 16 = C/N0 66 がほぼ全部オン)
 FRAME = 64                            # Haar のフレーム長 [サンプル]
@@ -35,13 +36,14 @@ STFT_FLOOR = 1e-5
 
 
 def gate(e0, sd, status):
-    """e0, sd (T, 128)、status (T,) → 超解像をかける Haar フレーム (T,) bool。因果 (過去 GATE_WIN フレーム)"""
+    """e0, sd (T, 128)、status (T,) → 超解像をかける Haar フレーム (T,) bool。因果 (過去 GATE_WIN フレーム)。
+    先頭の GATE_WIN フレームは過去が揃わないのでオフ"""
     u = (status <= 1).astype(np.float64)
     sig = np.cumsum((e0.astype(np.float64) ** 2).sum(1) * u)
     var = np.cumsum((sd.astype(np.float64) ** 2).sum(1) * u)
     lag = lambda c: np.concatenate([np.zeros(GATE_WIN), c[:-GATE_WIN]])[:len(c)]  # noqa: E731
     s, v = sig - lag(sig), var - lag(var)
-    return (s > 0) & (s >= v * 10 ** (GATE_SNR / 10))
+    return (s > 0) & (s >= v * 10 ** (GATE_SNR / 10)) & (np.arange(len(s)) >= GATE_WIN)
 
 
 def mdct_gate(g, F, pad):
@@ -135,7 +137,7 @@ class PostNet(nn.Module):
             pad = (d, d) if i < self.lookahead else (2 * d, 0)
             h = h + c2(self.act(c1(nn.functional.pad(n(h), pad))))
         y = self.out(h)
-        return 2 * torch.sigmoid(y[:, :M]) * X + y[:, M:] * var.sqrt()
+        return 2 * torch.sigmoid(y[:, :M]) * X + A_MAX * torch.tanh(y[:, M:]) * var.sqrt()
 
 
 def receptive_past():

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PostNet (MDCT 領域の超解像) の学習。data/<profile>/post/{train,val} (gen_post.py) の、確定した MendNet の出力から切り出す。
-切り出しは、全フレームで超解像をかける判定 (postnet.gate: 元の音質が良いとき) がオンのところだけ。切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
+切り出しは、損失に入るフレームで超解像をかける判定 (postnet.gate: 元の音質が良いとき) が全部オンのところだけ (文脈はオフでもよい)。切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
 損失は postnet.post_loss (帯域ごとの相対誤差の対数 + 複数解像度の対数振幅)。
 
   .venv/bin/python tools/train_post.py --profile B200 --minutes 120 --out runs/post_B200.pt
@@ -23,12 +23,14 @@ from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, gate, post_loss,
 F = 192                                   # MDCT のフレーム数
 CROP = (F + 1) * M // FRAME               # Haar のフレーム数
 SKIP = 96
+LEAD = SKIP * M // FRAME                  # 判定を問わない先頭の Haar フレーム数 (文脈だけ。オフの所から入る切り替わり目も学ぶ)
 HIGH = 64                                 # 検証で別に見る高い帯域の下端のビン (4 kHz)
 assert SKIP >= receptive_past()
 
 
 class Crops:
-    """区間・全シナリオの MendNet の出力と原音を (CPU に) 保持して、超解像をかける判定が切り出しの全フレームでオンのところを切り出す"""
+    """区間・全シナリオの MendNet の出力と原音を (CPU に) 保持して、損失に入るフレーム (先頭 LEAD より後) で
+    超解像をかける判定が全部オンのところを切り出す"""
 
     def __init__(self, files):
         self.e0, self.sd, self.truth, self.status, self.starts = [], [], [], [], []
@@ -37,7 +39,7 @@ class Crops:
             st = []
             for sc in range(z["e0"].shape[0]):
                 off = np.concatenate([[0], np.cumsum(~gate(z["e0"][sc], z["sd"][sc], z["status"][sc]))])
-                a = np.flatnonzero(off[CROP:] == off[:-CROP])
+                a = np.flatnonzero(off[CROP:] == off[LEAD:len(off) - CROP + LEAD])
                 if len(a):
                     st.append((sc, a))
             if not st:
