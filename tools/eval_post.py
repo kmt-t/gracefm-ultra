@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PostNet (MDCT 領域の超解像) の評価。各シナリオを丸ごと (約 20 秒) 処理し、MendNet の出力 (PostNet の入力) と比べる。
-- 既定: data/<profile>/post/val で、帯域ごとの SNR、エネルギーの比、対数スペクトル距離 (MDCT 領域、M と S の合計)。
+- 既定: data/<profile>/post/val の超解像の対象のシナリオ (postnet.in_scope) で、帯域ごとの SNR、エネルギーの比、対数スペクトル距離 (MDCT 領域、M と S の合計)。
 - --awgn: data/<profile>/post/awgn_val で、音声 (ステレオ 32 kHz) の SNR (全体)、PSNR (区間の平均)、ViSQOL (区間の平均) を Es/N0 ごとに。
   復号のまま (data/<profile>/mend_awgn/val の dec) も並べる。
 
@@ -24,7 +24,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
-from gracefm_ultra.postnet import M, PostNet, Transform  # noqa: E402
+from gracefm_ultra.postnet import M, PostNet, Transform, in_scope  # noqa: E402
 from eval_mendnet import CN_OFFSET, visqol  # noqa: E402
 
 
@@ -66,7 +66,7 @@ def eval_bands(files, net, tf, dev):
     for f in files:
         z = np.load(f)
         R = tfc.mdct(torch.from_numpy(wave_of(z["truth"], tfc))).numpy()
-        for sc in range(z["e0"].shape[0]):
+        for sc in np.flatnonzero(in_scope(z["scen"])):
             out = process(net, tf, z["e0"][sc], z["sd"][sc], dev)
             for k in methods:
                 Y = tfc.mdct(torch.from_numpy(out[k])).numpy()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PostNet (MDCT 領域の超解像) の学習。data/<profile>/post/{train,val} (gen_post.py) の、確定した MendNet の出力から切り出す。
-切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
+超解像の対象のシナリオ (postnet.in_scope: 元の音質が良いとき) だけを使う。切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
 損失は postnet.post_loss (帯域ごとの相対誤差の対数 + 複数解像度の対数振幅)。
 
   .venv/bin/python tools/train_post.py --profile B200 --minutes 120 --out runs/post_B200.pt
@@ -18,7 +18,7 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
-from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, post_loss, receptive_past  # noqa: E402
+from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, in_scope, post_loss, receptive_past  # noqa: E402
 
 F = 192                                   # MDCT のフレーム数
 CROP = (F + 1) * M // FRAME               # Haar のフレーム数
@@ -28,16 +28,19 @@ assert SKIP >= receptive_past()
 
 
 class Crops:
-    """区間・全シナリオの MendNet の出力と原音を (CPU に) 保持して、切り出す"""
+    """区間ごとに、超解像の対象のシナリオ (postnet.in_scope) の MendNet の出力と原音を (CPU に) 保持して、切り出す"""
 
     def __init__(self, files):
         self.e0, self.sd, self.truth, self.status = [], [], [], []
         for f in files:
             z = np.load(f)
-            self.e0.append(torch.from_numpy(z["e0"]))
-            self.sd.append(torch.from_numpy(z["sd"]))
+            k = in_scope(z["scen"])
+            if not k.any():
+                continue
+            self.e0.append(torch.from_numpy(z["e0"][k]))
+            self.sd.append(torch.from_numpy(z["sd"][k]))
             self.truth.append(torch.from_numpy(z["truth"]))
-            self.status.append(torch.from_numpy(z["status"]))
+            self.status.append(torch.from_numpy(z["status"][k]))
 
     def locate(self, bs, rng):
         """[(区間, シナリオ, 先頭フレーム, 成分), …]"""
@@ -94,7 +97,8 @@ def main():
     net = PostNet(**cfg).to(dev)
     if a.resume:
         net.load_state_dict(torch.load(a.resume, map_location=dev)["model"])
-    print(f"区間 学習 {len(tr.e0)}、検証 {len(va.e0)}、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
+    nsc = lambda c: sum(x.shape[0] for x in c.e0)  # noqa: E731
+    print(f"区間 学習 {len(tr.e0)} (シナリオ {nsc(tr)})、検証 {len(va.e0)} (シナリオ {nsc(va)})、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     vrng = np.random.default_rng(1)
     vb = [va.gather(va.locate(a.bs, vrng), dev) for _ in range(16)]
