@@ -9,6 +9,23 @@
 
 制約: バッファ200 msまで、メモリ2 GBまで。エンジンの最終形は Rust + ONNX Runtime（未着手）。
 
+## ターゲットデバイス
+
+受信機は **RTL-SDR Blog V4L (Lite)** で動くように設計する。
+
+| 項目 | 内容 |
+|---|---|
+| 製品 | RTL-SDR Blog V4L (Lite)、ドングルのみ |
+| チューナー | R828S |
+| 復調・ADC | RTL2832U。I/Q は 8 bit |
+| 基準発振 | 1 PPM TCXO |
+| アンテナ端子 | SMA |
+| サンプルレート | 2.4 MS/s 以下（RTL2832U で取りこぼしなく使える範囲） |
+
+設計への影響:
+- 受信の DSP の入力は、8 bit の I/Q で 2.4 MS/s 以下とする。
+- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は、このデバイスに合わせる（8 bit）。
+
 ## baseline
 
 `runs/baseline/`（`runs/baseline/README.md` に作り方と評価）。改善は、ここを基準にして比べる。
