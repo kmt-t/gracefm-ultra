@@ -7,7 +7,7 @@ MDCT 領域に移した雑音の地図と合わせて、原音の MDCT 係数を
 - 網: MDCT フレーム列の TCN (正規化はフレームごと)。先読みは最初の 2 段 (各 1 フレーム) だけで、残りは因果。出力は各ビンのゲイン g と足し込む量 a:
   Y = 2 sigmoid(g) X + A_MAX tanh(a) √(雑音の分散)。足し込みは事後標準偏差の A_MAX 倍まで。初期値は恒等 (Y = X)。
 - 対象: 元の音質が良いときだけ。MendNet の事後標準偏差から出す予測の SNR (過去 1 秒の使えるフレームの、係数の二乗和 / 分散の和) が
-  GATE_SNR 以上のフレーム。欠落は MendNet が埋めたものを含める。オフのフレームは MendNet の出力のまま (MDCT のフレームごとに切り替え、
+  GATE_ON 以上でオンになり、GATE_OFF を下回るとオフに戻る (ヒステリシス)。欠落は MendNet が埋めたものを含める。オフのフレームは MendNet の出力のまま (MDCT のフレームごとに切り替え、
   窓の重なりでつながる)。
 - 損失: フレーム・帯域 (臨界帯域程度) ごとの相対誤差の対数 (下限 −60 dB)。Haar の量子化の雑音は全帯域に漏れて、弱い高い帯域 (ピアノの倍音など) を
   埋めるので、帯域ごとに原音のエネルギーで正規化して、高い帯域も同じ重みで扱う。加えて複数解像度の対数振幅。
@@ -21,7 +21,8 @@ from .haarnet import haar_matrix
 M = 256                               # MDCT のビン数 = ホップ
 A_MAX = 2.0                           # 足し込む量の上限 (事後標準偏差の倍数)
 GATE_WIN = 500                        # 切り替えの判定の平滑化 [Haar フレーム] (過去 1 秒)
-GATE_SNR = 27.5                       # 予測の SNR がこれ以上なら超解像をかける [dB] (B200 の AWGN で Es/N0 18 = C/N0 68 でオンが半分、20 で 9 割、22 以上で全部)
+GATE_ON = 27.5                        # 予測の SNR がこれ以上になったらオン [dB] (B200 の AWGN で Es/N0 18 = C/N0 68 あたり)
+GATE_OFF = 25.5                       # オンのあと、これを下回ったらオフ [dB] (ヒステリシス。閾値の前後での細かい入れ替わりを防ぐ)
 FRAME = 64                            # Haar のフレーム長 [サンプル]
 X_SCALE = 1e-4                        # 係数の特徴: asinh(X / X_SCALE) / 8
 DIL = [1, 1, 2, 4, 8, 1, 2, 4, 8, 16]
@@ -37,13 +38,18 @@ STFT_FLOOR = 1e-5
 
 def gate(e0, sd, status):
     """e0, sd (T, 128)、status (T,) → 超解像をかける Haar フレーム (T,) bool。因果 (過去 GATE_WIN フレーム)。
-    先頭の GATE_WIN フレームは過去が揃わないのでオフ"""
+    GATE_ON 以上でオン、オンの間は GATE_OFF を下回るまでオン。先頭の GATE_WIN フレームは過去が揃わないのでオフ"""
     u = (status <= 1).astype(np.float64)
     sig = np.cumsum((e0.astype(np.float64) ** 2).sum(1) * u)
     var = np.cumsum((sd.astype(np.float64) ** 2).sum(1) * u)
     lag = lambda c: np.concatenate([np.zeros(GATE_WIN), c[:-GATE_WIN]])[:len(c)]  # noqa: E731
     s, v = sig - lag(sig), var - lag(var)
-    return (s > 0) & (s >= v * 10 ** (GATE_SNR / 10)) & (np.arange(len(s)) >= GATE_WIN)
+    snr = 10 * np.log10(np.maximum(s, 1e-30) / np.maximum(v, 1e-30))
+    out, on = np.zeros(len(s), bool), False
+    for t in range(GATE_WIN, len(s)):
+        on = s[t] > 0 and snr[t] >= (GATE_OFF if on else GATE_ON)
+        out[t] = on
+    return out
 
 
 def mdct_gate(g, F, pad):
