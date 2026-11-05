@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PostNet (MDCT 領域の超解像) の学習。data/<profile>/post/{train,val} (gen_post.py) の、確定した MendNet の出力から切り出す。
-超解像の対象のシナリオ (postnet.in_scope: 元の音質が良いとき) だけを使う。切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
+切り出しは、全フレームで超解像をかける判定 (postnet.gate: 元の音質が良いとき) がオンのところだけ。切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
 損失は postnet.post_loss (帯域ごとの相対誤差の対数 + 複数解像度の対数振幅)。
 
   .venv/bin/python tools/train_post.py --profile B200 --minutes 120 --out runs/post_B200.pt
@@ -18,7 +18,7 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
-from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, in_scope, post_loss, receptive_past  # noqa: E402
+from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, gate, post_loss, receptive_past  # noqa: E402
 
 F = 192                                   # MDCT のフレーム数
 CROP = (F + 1) * M // FRAME               # Haar のフレーム数
@@ -28,27 +28,33 @@ assert SKIP >= receptive_past()
 
 
 class Crops:
-    """区間ごとに、超解像の対象のシナリオ (postnet.in_scope) の MendNet の出力と原音を (CPU に) 保持して、切り出す"""
+    """区間・全シナリオの MendNet の出力と原音を (CPU に) 保持して、超解像をかける判定が切り出しの全フレームでオンのところを切り出す"""
 
     def __init__(self, files):
-        self.e0, self.sd, self.truth, self.status = [], [], [], []
+        self.e0, self.sd, self.truth, self.status, self.starts = [], [], [], [], []
         for f in files:
             z = np.load(f)
-            k = in_scope(z["scen"])
-            if not k.any():
+            st = []
+            for sc in range(z["e0"].shape[0]):
+                off = np.concatenate([[0], np.cumsum(~gate(z["e0"][sc], z["sd"][sc], z["status"][sc]))])
+                a = np.flatnonzero(off[CROP:] == off[:-CROP])
+                if len(a):
+                    st.append((sc, a))
+            if not st:
                 continue
-            self.e0.append(torch.from_numpy(z["e0"][k]))
-            self.sd.append(torch.from_numpy(z["sd"][k]))
+            self.e0.append(torch.from_numpy(z["e0"]))
+            self.sd.append(torch.from_numpy(z["sd"]))
             self.truth.append(torch.from_numpy(z["truth"]))
-            self.status.append(torch.from_numpy(z["status"][k]))
+            self.status.append(torch.from_numpy(z["status"]))
+            self.starts.append(st)
 
     def locate(self, bs, rng):
         """[(区間, シナリオ, 先頭フレーム, 成分), …]"""
         out = []
         for _ in range(bs):
             si = int(rng.integers(len(self.e0)))
-            S, T = self.e0[si].shape[:2]
-            out.append((si, int(rng.integers(S)), int(rng.integers(T - CROP + 1)), int(rng.integers(2))))
+            sc, a = self.starts[si][int(rng.integers(len(self.starts[si])))]
+            out.append((si, int(sc), int(a[rng.integers(len(a))]), int(rng.integers(2))))
         return out
 
     def gather(self, locs, dev):
@@ -97,7 +103,7 @@ def main():
     net = PostNet(**cfg).to(dev)
     if a.resume:
         net.load_state_dict(torch.load(a.resume, map_location=dev)["model"])
-    nsc = lambda c: sum(x.shape[0] for x in c.e0)  # noqa: E731
+    nsc = lambda c: sum(len(x) for x in c.starts)  # noqa: E731
     print(f"区間 学習 {len(tr.e0)} (シナリオ {nsc(tr)})、検証 {len(va.e0)} (シナリオ {nsc(va)})、パラメータ {sum(p.numel() for p in net.parameters()) / 1e6:.2f} M", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     vrng = np.random.default_rng(1)
