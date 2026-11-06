@@ -1,5 +1,5 @@
 """
-MendNet の学習・評価の窓。data/<profile>/mend/{train,val} (gen_hn.py --mend) の、実際の復号の結果から窓 (WIN フレーム) を切り出す。
+MendNet の学習・評価の窓。data/<profile>/mend/{train,val} (gen_mend.py) の、実際の復号の結果から窓 (WIN フレーム) を切り出す。
 窓は、使えない (壊れた・欠落) フレームを含むものを選ぶ。
 """
 import numpy as np

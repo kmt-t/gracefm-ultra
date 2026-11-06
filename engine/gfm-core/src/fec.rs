@@ -158,7 +158,7 @@ pub fn rsc_decode(x_soft: &[f64], parity_soft: &[f64], tail_soft: &[f64]) -> Vec
 /// 並列リストビタビ。尤度の高い順に最大 list 個の復号ビット（nbits）と経路メトリックを返す。
 /// 経路メトリックは対数尤度の 2 倍（メトリックの差の 1/2 が、対数尤度の差 [nat]）。1 番目は `viterbi_decode` と同じ。
 pub fn viterbi_list(soft: &[f64], nbits: usize, list: usize) -> Vec<(Vec<u8>, f64)> {
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, Default)]
     struct Entry {
         metric: f64,
         from_p1: bool,
@@ -166,46 +166,58 @@ pub fn viterbi_list(soft: &[f64], nbits: usize, list: usize) -> Vec<(Vec<u8>, f6
     }
     let tr = trellis();
     let l = nbits + K - 1;
-    let mut cur: Vec<Vec<f64>> = vec![Vec::new(); NSTATE];
-    cur[0].push(0.0);
-    let mut store: Vec<Vec<Vec<Entry>>> = Vec::with_capacity(l);
+    // 時刻 t・状態 s の候補は store[(t·NSTATE + s)·list ..]、その数は count[t·NSTATE + s]（メトリックの降順）
+    let mut store = vec![Entry::default(); l * NSTATE * list];
+    let mut count = vec![0usize; l * NSTATE];
+    let mut prev = vec![0f64; NSTATE * list];
+    let mut prev_n = [0usize; NSTATE];
+    prev_n[0] = 1;
     for t in 0..l {
         let (r0, r1) = (soft[2 * t], soft[2 * t + 1]);
         let bm = [r0 + r1, r0 - r1, -r0 + r1, -r0 - r1];
-        let mut layer: Vec<Vec<Entry>> = vec![Vec::new(); NSTATE];
-        for (ns, out) in layer.iter_mut().enumerate() {
+        for ns in 0..NSTATE {
             if t >= nbits && tr.forced[ns] {
                 continue; // 終端区間は入力 0 のみ
             }
-            let (a, b) = (&cur[tr.p0[ns]], &cur[tr.p1[ns]]);
+            let (pa, pb) = (tr.p0[ns], tr.p1[ns]);
+            let (a, b) = (&prev[pa * list..pa * list + prev_n[pa]], &prev[pb * list..pb * list + prev_n[pb]]);
             let (ba, bb) = (bm[tr.b0[ns]], bm[tr.b1[ns]]);
-            let (mut i, mut j) = (0, 0);
-            while out.len() < list && (i < a.len() || j < b.len()) {
+            let out = &mut store[(t * NSTATE + ns) * list..(t * NSTATE + ns + 1) * list];
+            let (mut i, mut j, mut n) = (0, 0, 0);
+            while n < list && (i < a.len() || j < b.len()) {
                 let take_a = j >= b.len() || (i < a.len() && a[i] + ba >= b[j] + bb);
-                if take_a {
-                    out.push(Entry { metric: a[i] + ba, from_p1: false, prev_rank: i as u16 });
+                out[n] = if take_a {
                     i += 1;
+                    Entry { metric: a[i - 1] + ba, from_p1: false, prev_rank: (i - 1) as u16 }
                 } else {
-                    out.push(Entry { metric: b[j] + bb, from_p1: true, prev_rank: j as u16 });
                     j += 1;
-                }
+                    Entry { metric: b[j - 1] + bb, from_p1: true, prev_rank: (j - 1) as u16 }
+                };
+                n += 1;
+            }
+            count[t * NSTATE + ns] = n;
+        }
+        for s in 0..NSTATE {
+            let n = count[t * NSTATE + s];
+            prev_n[s] = n;
+            for r in 0..n {
+                prev[s * list + r] = store[(t * NSTATE + s) * list + r].metric;
             }
         }
-        cur = layer.iter().map(|v| v.iter().map(|e| e.metric).collect()).collect();
-        store.push(layer);
     }
-    (0..store[l - 1][0].len())
+    let at = |t: usize, s: usize, r: usize| store[(t * NSTATE + s) * list + r];
+    (0..count[(l - 1) * NSTATE])
         .map(|rank| {
             let (mut s, mut r) = (0usize, rank);
             let mut bits = vec![0u8; l];
             for t in (0..l).rev() {
-                let e = store[t][s][r];
+                let e = at(t, s, r);
                 bits[t] = (s >> (K - 2)) as u8;
                 s = if e.from_p1 { tr.p1[s] } else { tr.p0[s] };
                 r = e.prev_rank as usize;
             }
             bits.truncate(nbits);
-            (bits, store[l - 1][0][rank].metric)
+            (bits, at(l - 1, 0, rank).metric)
         })
         .collect()
 }

@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from .haarnet import haar_matrix
+from .mendnet import haar_matrix
 
 M = 256                               # MDCT のビン数 = ホップ
 A_MAX = 2.0                           # 足し込む量の上限 (事後標準偏差の倍数)

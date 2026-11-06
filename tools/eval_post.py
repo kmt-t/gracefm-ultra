@@ -105,7 +105,7 @@ def lr(w):
     return np.stack([w[0] + w[1], w[0] - w[1]], 1)
 
 
-def eval_awgn(files, src, net, tf, dev):
+def eval_awgn(files, src, net, tf, dev, esn0=None):
     methods = ["復号のまま", "MendNet", "PostNet"]
     acc, on = {}, {}
     tfc = Transform()
@@ -116,6 +116,8 @@ def eval_awgn(files, src, net, tf, dev):
             ref = lr(wave_of(z["truth"], tfc))
             jobs, keys = [], []
             for sc, e0 in enumerate(z["scen"][:, 0]):
+                if esn0 and not np.isclose(esn0, e0).any():
+                    continue
                 out, g = process(net, tf, z["e0"][sc], z["sd"][sc], z["status"][sc], dev)
                 on.setdefault(float(e0), []).append(g.mean())
                 out["復号のまま"] = wave_of(dec[sc], tfc)
@@ -145,6 +147,7 @@ def main():
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--awgn", action="store_true")
+    ap.add_argument("--esn0", default="", help="--awgn で、この Es/N0 [dB] だけ (カンマ区切り。例: 16,18,20,22)")
     ap.add_argument("--match", default="", help="区間のファイル名にこのどれかを含むものだけ (カンマ区切り。例: Chopin,Scarlatti,Kimiko)")
     a = ap.parse_args()
     pin()
@@ -157,7 +160,8 @@ def main():
     pick = lambda sub: [f for f in sorted(glob.glob(os.path.join(d, "post", sub, "*.npz")))  # noqa: E731
                         if not keys or any(k in os.path.basename(f) for k in keys)]
     if a.awgn:
-        eval_awgn(pick("awgn_val"), os.path.join(d, "mend_awgn", "val"), net, tf, dev)
+        eval_awgn(pick("awgn_val"), os.path.join(d, "mend_awgn", "val"), net, tf, dev,
+                  [float(x) for x in a.esn0.split(",") if x])
     else:
         eval_bands(pick("val"), net, tf, dev)
 

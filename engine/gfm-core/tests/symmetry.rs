@@ -1,6 +1,7 @@
-//! 送信と受信の対称性: ノイズなしなら、Decoder(Encoder(x)) は原音を量子化誤差の範囲で再現する。欠落は品質コード 2 で報告される。
+//! 送信と受信の対称性: ノイズなしなら、Decoder(Encoder(x)) の係数を合成すると、原音を量子化誤差の範囲で再現する。欠落は Lost で報告される。
 
-use gfm_core::decoder::Decoder;
+use gfm_core::codec::synthesize;
+use gfm_core::decoder::{DecodedFrame, Decoder, Status};
 use gfm_core::encoder::Encoder;
 use gfm_core::prior::PriorConfig;
 use gfm_core::profiles::profile_by_name;
@@ -22,6 +23,12 @@ fn signal(n: usize, seed: u64) -> Vec<[f64; 2]> {
         .collect()
 }
 
+fn decode(p: &gfm_core::profiles::Profile, frames: &[Option<Vec<[f64; 2]>>]) -> (Vec<DecodedFrame>, Decoder) {
+    let mut dec = Decoder::new(p, PriorConfig::FULL).unwrap();
+    let out = frames.iter().map(|f| dec.push(f.as_deref())).collect();
+    (out, dec)
+}
+
 fn frames_of(p: &gfm_core::profiles::Profile, x: &[[f64; 2]]) -> Vec<Option<Vec<[f64; 2]>>> {
     Encoder::new(p, 0, 0).unwrap().run(x).into_iter().map(Some).collect()
 }
@@ -35,11 +42,11 @@ fn decoder_inverts_encoder() {
         let p = profile_by_name(name).unwrap();
         let x = signal(64 * 60, 7);
         let frames = frames_of(&p, &x);
-        let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0, &PriorConfig::FULL);
-        assert!(out.valid.iter().all(|&v| v), "{}: 欠落が出た", name);
-        assert!(out.quality.iter().all(|&q| q == 0 || q == 1), "{}: 品質コード", name);
+        let (out, _) = decode(&p, &frames);
+        assert!(out.iter().all(|d| d.status == Status::Ok), "{}: 正常でないフレームが出た", name);
+        let pcm: Vec<[f64; 2]> = out.iter().flat_map(|d| synthesize(&d.coef)).collect();
         let (mut sig, mut err) = (0f64, 0f64);
-        for (o, r) in out.pcm.iter().zip(&x).skip(128) {
+        for (o, r) in pcm.iter().zip(&x).skip(128) {
             for c in 0..2 {
                 let rv = r[c];
                 sig += rv * rv;
@@ -57,8 +64,8 @@ fn lost_frame_is_reported() {
     let x = signal(64 * 10, 3);
     let mut frames = frames_of(&p, &x);
     frames[4] = None;
-    let out = Decoder::new(&p).unwrap().run(&frames, x.len(), 0, &PriorConfig::FULL);
-    assert_eq!(out.quality[4], 2);
-    assert!(!out.valid[4 * 64] && out.valid[3 * 64]);
-    assert_eq!(out.stats.lost, 1);
+    let (out, dec) = decode(&p, &frames);
+    assert_eq!(out[4].status, Status::Lost);
+    assert_eq!(out[3].status, Status::Ok);
+    assert_eq!(dec.stats.lost, 1);
 }

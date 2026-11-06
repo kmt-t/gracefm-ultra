@@ -1,6 +1,6 @@
 """
 MendNet: 融合後の Haar 係数のフレーム列 (WIN フレーム)、フレームの状態・誤差分散・ヘッダの信頼度・受信 LLR から、全フレームの仮数ビットの LLR
-(受信 LLR への補正) と、ヘッダが復号できないフレームの刻みを非因果に出す。係数は LLR からの事後平均。入力と出力の定義は docs/MENDNET.md。
+(受信 LLR への補正) と、ヘッダが復号できないフレームの刻みを非因果に出す。係数は LLR からの事後平均 (soft_e0)。入力と出力の定義は docs/MENDNET.md。
 Haar は直交なので、係数領域の誤差エネルギーは時間領域と同じ。ONNX に出せる演算 (Conv1d, GELU, GroupNorm) だけで組む。
 """
 import numpy as np
@@ -186,3 +186,52 @@ def run_both(net, per_comp, bit_idx, bit_ok, nbit):
         llr[:, :, bit_idx[ch][ok]] = (l * LLR_SCALE)[:, :, ok]
         step[:, :, ch * 64:(ch + 1) * 64] = step_of(st)
     return llr, step
+
+
+def haar_matrix():
+    """64 点の直交 Haar 合成行列 H (係数 (.., 64) @ H = サンプル (.., 64))。haar_inv と同じ並び"""
+    return np.stack([haar_inv(np.eye(64)[i]) for i in range(64)])
+
+
+class Meta:
+    """ビットの属性 (gfm-gen が保存) から、LLR → 係数の事後平均・分散への写像を作る"""
+
+    def __init__(self, pos, coef_of_bit, offsets, qmin, qmax):
+        self.nbit = len(pos)
+        w = np.zeros((self.nbit, len(offsets)))
+        w[np.arange(self.nbit), coef_of_bit] = 2.0 ** np.asarray(pos, np.float64)
+        self.W = torch.from_numpy(w).float()
+        self.W2 = torch.from_numpy(w ** 2).float()
+        self.offset = torch.tensor(offsets, dtype=torch.float32)
+        self.qmin = torch.tensor(qmin, dtype=torch.float32)
+        self.qmax = torch.tensor(qmax, dtype=torch.float32)
+
+    def to(self, dev):
+        """内部のテンソルを dev (cpu / cuda) へ移す"""
+        for k in ("W", "W2", "offset", "qmin", "qmax"):
+            setattr(self, k, getattr(self, k).to(dev))
+        return self
+
+
+def make_meta(npz, profile):
+    """gfm-gen の出力 (npz の pos、coef_of_bit) とプロファイルから Meta を作る"""
+    from gracefm.codec import offset_of, qmax_of, qmin_of
+    from gracefm.layout import Layout
+    lay = Layout(profile)
+    offs, qmin, qmax = [], [], []
+    for (ch, k), o in lay.coef_offset.items():
+        bits = {"M": profile.bits_m, "S": profile.bits_s}[ch][k]
+        n = profile.ncoef(k)
+        offs += [offset_of(bits, profile, ch, k)] * n
+        qmin += [qmin_of(bits, profile, ch, k)] * n
+        qmax += [qmax_of(bits)] * n
+    return Meta(npz["pos"], npz["coef_of_bit"], offs, qmin, qmax)
+
+
+def soft_e0(llr, step, meta):
+    """llr: (B, T, nbit) 整数 LLR (正 = bit 0)、step: (B, T, ncoef) → 事後平均 E0、標準偏差 (係数の単位)"""
+    p1 = torch.sigmoid(-llr / LLR_SCALE)
+    m = (p1 @ meta.W) - meta.offset
+    m = torch.maximum(torch.minimum(m, meta.qmax), meta.qmin)
+    v = (p1 * (1 - p1)) @ meta.W2 + 1.0 / 12
+    return m * step, v.sqrt() * step

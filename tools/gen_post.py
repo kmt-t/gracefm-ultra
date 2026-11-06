@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PostNet の学習・評価データ。data/<profile>/<src>/<split> (gen_hn.py --mend) の各区間・各シナリオを、確定した MendNet で丸ごと復元し、
+PostNet の学習・評価データ。data/<profile>/<src>/<split> (gen_mend.py) の各区間・各シナリオを、確定した MendNet で丸ごと復元し、
 data/<profile>/post/<out>/ に書く。窓 WIN フレームを WIN/2 ずつずらし、各窓の中央 WIN/2 フレームを採る (先頭と末尾の窓は端まで)。
 
 出力の .npz (シナリオ S、フレーム T、係数 128 = M 64 + S 64、満点 1.0):
@@ -28,8 +28,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.haarnet import make_meta, soft_e0  # noqa: E402
-from gracefm_ultra.mendnet import Q22, WIN, run_both  # noqa: E402
+from gracefm_ultra.mendnet import Q22, WIN, make_meta, run_both, soft_e0  # noqa: E402
 from eval_mendnet import load  # noqa: E402
 from mend_windows import Windows  # noqa: E402
 
@@ -73,7 +72,7 @@ def main():
     outdir = os.path.join(a.data, a.profile, "post", a.out)
     os.makedirs(outdir, exist_ok=True)
     z = np.load(files[0])
-    meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit", "group")}, PROFILES[a.profile]).to(dev)
+    meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit")}, PROFILES[a.profile]).to(dev)
     net = load(a.ckpt, dev)
     t0 = time.time()
     for k, f in enumerate(files, 1):

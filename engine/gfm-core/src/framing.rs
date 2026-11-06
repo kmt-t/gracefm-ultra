@@ -4,7 +4,7 @@ use crate::codec::BlockData;
 use crate::fec;
 use crate::layout::Layout;
 
-/// 仮数の各ビット（Layout の coef_items の並び）。pack と、通信路なしの復元（decoder::reconstruct_coeffs）が共有する
+/// 仮数の各ビット（Layout の coef_items の並び）。pack が使う
 pub fn coefficient_bits(lay: &Layout, bd: &BlockData) -> Vec<u8> {
     let mut flat_mant: Vec<i64> = Vec::with_capacity(lay.n_coef);
     for &(ch, k) in &lay.coef_groups {
@@ -98,7 +98,7 @@ impl Default for UnpackOptions<'_> {
 }
 
 /// pack の逆。soft: 送信ビット列全体の軟値（自然対数の LLR、正 = 0 らしい）、bits: 硬判定。
-/// ヘッダを尤度の高い順の候補にして（リストビタビ）、基本 CRC が最初に合うものを採る。合う候補がなければ None。
+/// ヘッダを尤度の高い順の候補にして（最尤が合わなければリストビタビ）、基本 CRC が最初に合うものを採る。合う候補がなければ None。
 /// 純粋な関数。
 pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> Option<Unpacked> {
     use crate::codec::{offset_of, qmax_of, qmin_of};
@@ -125,10 +125,9 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> O
     } else {
         Vec::new()
     };
-    let candidates = fec::rsc_decode_list(&header_soft, &pick(&lay.hpar_idx), &pick(&lay.htail_idx), opt.list.max(1));
-    let best = candidates.first()?.1;
     let n_core = fec::CRC_CORE.0;
-    let (rank, gap, prot, high_ok) = candidates.iter().enumerate().find_map(|(rank, (prot, metric))| {
+    // 基本 CRC と固定値が合えば、高域 CRC の結果を返す
+    let accept = |prot: &[u8]| -> Option<bool> {
         let body = &prot[..lay.n_prot];
         let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| body[i]).collect();
         core.extend(lay.core_top.iter().map(|&i| top[i]));
@@ -141,9 +140,23 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> O
         }
         let mut high: Vec<u8> = lay.high_prot.iter().map(|&i| body[i]).collect();
         high.extend(lay.high_top.iter().map(|&i| top[i]));
-        let high_ok = !lay.has_high_crc || fec::crc_high(&high) == prot[lay.n_prot + n_core..];
-        Some((rank, (best - metric) / 2.0, prot.clone(), high_ok))
-    })?;
+        Some(!lay.has_high_crc || fec::crc_high(&high) == prot[lay.n_prot + n_core..])
+    };
+    let (hpar, htail) = (pick(&lay.hpar_idx), pick(&lay.htail_idx));
+    // 最尤（ビタビ）が通ればそれを採る。通らなければ、尤度の高い順の候補（リストビタビ）から最初に通るもの
+    let best = fec::rsc_decode(&header_soft, &hpar, &htail);
+    let (rank, gap, prot, high_ok) = match accept(&best) {
+        Some(h) => (0, 0.0, best, h),
+        None => {
+            let candidates = fec::rsc_decode_list(&header_soft, &hpar, &htail, opt.list.max(1));
+            let top_metric = candidates.first()?.1;
+            candidates
+                .into_iter()
+                .enumerate()
+                .skip(1)
+                .find_map(|(rank, (prot, metric))| accept(&prot).map(|h| (rank, (top_metric - metric) / 2.0, prot, h)))?
+        }
+    };
     let body = &prot[..lay.n_prot];
     let hdr = &body[..lay.header_bits];
     let mut coef_bits: Vec<u8> = lay.coef_stream_idx.iter().map(|&i| bits[i]).collect();

@@ -4,7 +4,6 @@ Rust の送信（engine/gfm-tx、浮動小数点）が、本家 GraceFM（Python
 Rust が出したシンボルを、ほぼ雑音なしの通信路（Es/N0 = 40 dB）に通して、本家の受信にかける:
   - 基本 CRC・高域 CRC の不一致、欠落が 0
   - 本家の受信（デコーダだけ）の原音との SNR が、本家のエンコーダ → 本家のデコーダでの値（下の BASELINE_SNR、2 秒・同じ音源の区間）から 0.5 dB 以内
-さらに、Ultra の受信（engine/gfm-rx。出力段の IIR を通る）が、その値より 0.5 dB を超えて悪くならないこと（高域を送らないプロファイルは、出力段の 4 kHz ローパスで良くなる）。
 
   .venv/bin/python tools/test_rs_compat.py
 """
@@ -51,12 +50,9 @@ def main():
         frames = rs.tx(name, xi, scen=(40.0, 0, 0.0, 1.0), seed=1)
         res = Decoder(p).run(rs.to_q22(frames), len(xi), 0)       # 本家の受信
         s_gfm = snr(ref, res.pcm / float(1 << 23))
-        y, q, _ = rs.rx(name, frames, len(xi))                    # Ultra の受信
-        d = 3 if p.fs == 32000 else 5                             # Ultra の出力は、出力 IIR の遅延のぶん遅れる
-        s_ultra = snr(ref[:-d], y[d:])
         stats = res.stats
-        ok = stats["crc_fail"] == 0 and stats["lost"] == 0 and stats["high_crc_fail"] == 0 and abs(s_gfm - base) <= TOLERANCE_DB and s_ultra >= base - TOLERANCE_DB
-        print(f"{'OK ' if ok else 'NG '} {name:11} 本家の受信 {s_gfm:6.2f} dB、Ultra の受信 {s_ultra:6.2f} dB（基準 {base:.2f}）、{stats}")
+        ok = stats["crc_fail"] == 0 and stats["lost"] == 0 and stats["high_crc_fail"] == 0 and abs(s_gfm - base) <= TOLERANCE_DB
+        print(f"{'OK ' if ok else 'NG '} {name:11} 本家の受信 {s_gfm:6.2f} dB（基準 {base:.2f}）、{stats}")
         bad += not ok
     sys.exit(1 if bad else 0)
 

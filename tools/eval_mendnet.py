@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-MendNet の評価。MendNet の係数は、出力の LLR から作る仮数の期待値 × 刻み (E0、haarnet.soft_e0)。怪しさは、その事後標準偏差。
+MendNet の評価。MendNet の係数は、出力の LLR から作る仮数の期待値 × 刻み (E0、mendnet.soft_e0)。怪しさは、その事後標準偏差。
 比べる相手は、復号のまま・AR 補間 (時間領域の両側補間)。
 
 - 既定: 検証データ (data/<profile>/mend/val) の窓で、使えないフレームの SNR [dB] を使えない連続区間の長さごとに、使えるフレームの SNR、
   怪しさと実際の誤差の順位相関 (フレームごと) を出す。
-- --awgn: AWGN のみの検証データ (gen_hn.py --split val --mend --sub mend_awgn --awgn 16,18,…,30) の各シナリオを丸ごと (約 20 秒) 復元し、
+- --awgn: AWGN のみの検証データ (gen_mend.py --split val --sub mend_awgn --awgn 16,18,…,30) の各シナリオを丸ごと (約 20 秒) 復元し、
   音声 (ステレオ 32 kHz) で原音と比べる。窓 WIN フレームを WIN/2 ずつずらし、各窓の中央 WIN/2 フレームを採る (実際の受信と同じ)。
   指標は SNR (全体)、PSNR (満点 ±1、区間ごとの平均)、ViSQOL (audio モード、48 kHz に変換、区間ごとの平均) を Es/N0 ごとに。
   C/N0 [dB-Hz] は Es/N0 + 50 (B200 の換算)。
@@ -29,8 +29,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.haarnet import make_meta, soft_e0  # noqa: E402
-from gracefm_ultra.mendnet import Q22, WIN, MendNet, haar_fwd, haar_inv, run_both  # noqa: E402
+from gracefm_ultra.mendnet import Q22, WIN, MendNet, haar_fwd, haar_inv, make_meta, run_both, soft_e0  # noqa: E402
 from gracefm_ultra.plc_ar import interpolate  # noqa: E402
 from tools.common import wavio  # noqa: E402
 from mend_windows import Windows  # noqa: E402
@@ -207,7 +206,7 @@ def main():
     files = sorted(glob.glob(os.path.join(a.data, a.profile, "mend_awgn" if a.awgn else "mend", "val", "*.npz")))
     va = Windows(files, dev)
     z = np.load(files[0])
-    meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit", "group")}, PROFILES[a.profile]).to(dev)
+    meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit")}, PROFILES[a.profile]).to(dev)
     net = load(a.ckpt, dev)
     if a.awgn:
         eval_awgn(va, files, net, meta)

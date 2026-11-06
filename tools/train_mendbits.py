@@ -2,7 +2,7 @@
 """
 MendNet の学習。復号した係数・状態・hint と受信 LLR から、全フレームの仮数ビットの LLR と刻み (ヘッダ) を出す。
 損失は mendnet.bits_loss (ビットの BCE + 刻みの Huber + 係数の相対誤差)。使えるフレームと使えないフレームを別々に平均する。
-data/<profile>/mend/{train,val} (gen_hn.py --mend) を使う。
+data/<profile>/mend/{train,val} (gen_mend.py) を使う。
 
   .venv/bin/python tools/train_mendbits.py --profile B200 --minutes 30 --out runs/mendbits_B200.pt
 """
