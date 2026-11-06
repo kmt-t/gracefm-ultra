@@ -1,11 +1,11 @@
 //! 受信（復号、MendNet、PostNet。`gfm_core::receiver`）。フレームを 1 つずつ受信機に入れる（実際の受信と同じ流れ）。使い方:
-//!   gfm-rx --profile B200 --frames a.sym --out out.raw [--models models/B200] [--ort libonnxruntime.so] [--threads 6]
+//!   gfm-rx --profile B200 --frames a.sym --out out.raw [--models models/B200] [--ort libonnxruntime.so] [--threads 2]
 //! a.sym（gfm-tx の出力）: u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 //! out.raw: L/R の交互の f32（満点 ±1）、フレーム数 × ブロック長のサンプル。
 //! --models: mendnet.onnx と postnet.onnx のディレクトリ（`tools/export_onnx.py` が書く）。
 //! --ort: ONNX Runtime の共有ライブラリ（既定は環境変数 ORT_DYLIB_PATH）。--threads: 推論のスレッド数。
-//! 標準エラー出力に、フレームの統計、超解像をかけた割合と切り替えの回数、処理時間（実時間比）、1 回の推論の最大の処理時間、
-//! 遅延（確定待ち + 最大の処理時間）、最大の常駐メモリを書く。
+//! 標準エラー出力に、フレームの統計、超解像をかけた割合と切り替えの回数、処理時間（実時間比）、推論の処理時間（最初の 1 回と、残りの中央値・99%・最大）、
+//! 遅延（確定待ち + 最初を除く最大の処理時間）、最大の常駐メモリを書く。
 
 use gfm_core::post::{PostInput, PostModel, PostOutput, BINS, LOOKAHEAD, MDCT_HOP};
 use gfm_core::profiles::profile_by_name;
@@ -136,7 +136,7 @@ fn main() {
     let (mut profile, mut frames, mut out) = (String::new(), String::new(), String::new());
     let mut models = "models/B200".to_string();
     let mut ort_path = std::env::var("ORT_DYLIB_PATH").unwrap_or_default();
-    let mut threads = 6usize;
+    let mut threads = 2usize;
     let mut i = 1;
     while i < args.len() {
         let next = args.get(i + 1).cloned().unwrap_or_else(|| panic!("{} に値がありません", args[i]));
@@ -172,11 +172,15 @@ fn main() {
         Receiver::new(&p, OrtMend(session("mendnet.onnx")), OrtPost::new(session("postnet.onnx"))).unwrap_or_else(|e| panic!("{}", e));
     let fr = read_sym(&frames);
     let mut pcm: Vec<[f64; 2]> = Vec::with_capacity(fr.len() * p.block);
-    let (t0, mut worst) = (std::time::Instant::now(), 0f64);
+    let t0 = std::time::Instant::now();
+    let mut steps: Vec<f64> = Vec::new(); // 音声を出したフレームの処理時間（網の推論を含む）
     for f in &fr {
         let t = std::time::Instant::now();
-        pcm.extend(rx.push(f.as_deref()).unwrap_or_else(|e| panic!("{}", e)));
-        worst = worst.max(t.elapsed().as_secs_f64());
+        let out = rx.push(f.as_deref()).unwrap_or_else(|e| panic!("{}", e));
+        if !out.is_empty() {
+            steps.push(t.elapsed().as_secs_f64());
+        }
+        pcm.extend(out);
     }
     pcm.extend(rx.finish().unwrap_or_else(|e| panic!("{}", e)));
     let dt = t0.elapsed().as_secs_f64();
@@ -189,8 +193,14 @@ fn main() {
     let dur = pcm.len() as f64 / p.fs as f64;
     let frame = p.block as f64 / p.fs as f64;
     let st = rx.stats();
+    // 最初の推論（初期化を含む）は分けて、残りの分布を出す
+    let first = steps.first().copied().unwrap_or(0.0);
+    let mut rest = steps.get(1..).unwrap_or(&[]).to_vec();
+    rest.sort_by(f64::total_cmp);
+    let at = |q: f64| rest.get(((rest.len().max(1) - 1) as f64 * q) as usize).copied().unwrap_or(0.0);
+    let worst = at(1.0);
     eprintln!(
-        "frames {} lost {} crc_fail {} high_crc_fail {} recovered {} post_on {:.3} switches {} time {:.2}s rtf {:.3} worst_push {:.1}ms latency {:.1}ms peak_rss {:.0}MB",
+        "frames {} lost {} crc_fail {} high_crc_fail {} recovered {} post_on {:.3} switches {} time {:.2}s rtf {:.3} first {:.1}ms median {:.1}ms p99 {:.1}ms worst {:.1}ms latency {:.1}ms peak_rss {:.0}MB",
         st.frames,
         st.lost,
         st.crc_fail,
@@ -200,6 +210,9 @@ fn main() {
         rx.switches,
         dt,
         dt / dur,
+        first * 1e3,
+        at(0.5) * 1e3,
+        at(0.99) * 1e3,
         worst * 1e3,
         (DELAY as f64 * frame + worst) * 1e3,
         peak_rss_mb()
