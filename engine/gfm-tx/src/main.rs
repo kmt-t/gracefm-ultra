@@ -1,5 +1,5 @@
 //! 送信と通信路（評価用）。使い方:
-//!   gfm-tx --profile B200 --pcm clip.raw --scen e0,fade,rate,burst --seed 1 --out a.sym
+//!   gfm-tx --profile B200-L --pcm clip.raw --scen e0,fade,rate,burst --seed 1 --out a.sym
 //! clip.raw: 符号つき 24 bit を int32 で入れた L/R の交互（リトルエンディアン、満点 = 2^23）。
 //! a.sym: u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 

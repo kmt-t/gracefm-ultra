@@ -6,9 +6,9 @@ PostNet の出力は、超解像をかける判定 (postnet.gate) がオフの M
 - --awgn: data/<profile>/post/awgn_val で、音声 (ステレオ 32 kHz) の SNR (全体)、PSNR (区間の平均)、ViSQOL (区間の平均) を Es/N0 ごとに。
   復号のまま (data/<profile>/mend_awgn/val の dec) も並べる。
 
-  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200.pt
-  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200.pt --awgn
-  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200.pt --match Chopin,Scarlatti,Kimiko   # ピアノだけ
+  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200-L.pt
+  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200-L.pt --awgn
+  .venv/bin/python tools/eval_post.py --ckpt runs/post_B200-L.pt --match Chopin,Scarlatti,Kimiko   # ピアノだけ
 """
 import argparse
 import glob
@@ -25,6 +25,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
+from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, gate, mdct_gate  # noqa: E402
 from eval_mendnet import CN_OFFSET, visqol  # noqa: E402
 
@@ -38,7 +39,7 @@ def load(path, dev):
 
 def process(net, tf, e0, sd, status, dev):
     """1 シナリオ e0, sd (T,128)、status (T,) → ({"MendNet": 波形 (2, T×64) M/S, "PostNet": 同}, 判定 (T,))"""
-    g = gate(e0, sd, status)
+    g = gate(e0, sd, status, tf.power)
     with torch.no_grad():
         c = torch.from_numpy(np.ascontiguousarray(e0.reshape(-1, 2, 64).transpose(1, 0, 2))).to(dev)
         s = torch.from_numpy(np.ascontiguousarray(sd.astype(np.float32).reshape(-1, 2, 64).transpose(1, 0, 2))).to(dev)
@@ -67,7 +68,7 @@ def eval_bands(files, net, tf, dev):
     hz = (np.arange(M) + 0.5) * 16000 / M
     acc = {(b, k): [0.0, 0.0, 0.0, 0.0, 0] for b in BANDS for k in methods}   # 原音、誤差、出力、LSD の二乗和、数
     n_on = n_all = 0
-    tfc = Transform()
+    tfc = Transform(tf.kind)
     for f in files:
         z = np.load(f)
         R = tfc.mdct(torch.from_numpy(wave_of(z["truth"], tfc))).numpy()
@@ -108,7 +109,7 @@ def lr(w):
 def eval_awgn(files, src, net, tf, dev, esn0=None):
     methods = ["復号のまま", "MendNet", "PostNet"]
     acc, on = {}, {}
-    tfc = Transform()
+    tfc = Transform(tf.kind)
     with Pool(len(CPUS), initializer=pin) as pool:
         for si, f in enumerate(files):
             z = np.load(f)
@@ -143,7 +144,7 @@ def eval_awgn(files, src, net, tf, dev, esn0=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", default="B200")
+    ap.add_argument("--profile", default="B200-L")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--awgn", action="store_true")
@@ -154,7 +155,7 @@ def main():
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     net = load(a.ckpt, dev)
-    tf = Transform().to(dev)
+    tf = Transform(PROFILES[a.profile].transform).to(dev)
     d = os.path.join(a.data, a.profile)
     keys = [k for k in a.match.split(",") if k]
     pick = lambda sub: [f for f in sorted(glob.glob(os.path.join(d, "post", sub, "*.npz")))  # noqa: E731

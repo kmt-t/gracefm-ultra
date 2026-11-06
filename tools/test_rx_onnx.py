@@ -4,7 +4,7 @@ Rust の受信 (engine/gfm-rx: Decoder → MendNet → 判定 → PostNet、ONNX
 同じ seed・シナリオの gfm-tx (シンボル) と gfm-gen --mend (MendNet の入力) は同じ通信路の実現になるので、両方の出力を比べる。
 基準: 両者の差が、原音に対して -60 dB 未満 (Rust は逐次処理で、後段の先読みに補間の暫定値を使うぶん、わずかに違う)。
 
-  .venv/bin/python tools/test_rx_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt
+  .venv/bin/python tools/test_rx_onnx.py --mend runs/mendnet_B200-L.pt --post runs/post_B200-L.pt
 """
 import argparse
 import os
@@ -38,10 +38,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mend", required=True)
     ap.add_argument("--post", required=True)
-    ap.add_argument("--models", default=os.path.join(HERE, "..", "engine", "models", "B200"))
+    ap.add_argument("--profile", default="B200-L")
+    ap.add_argument("--models", default="")
     ap.add_argument("--ort", default=os.environ.get("ORT_DYLIB_PATH") or ort_lib())
     a = ap.parse_args()
-    p = PROFILES["B200"]
+    p = PROFILES[a.profile]
+    models = a.models or os.path.join(HERE, "..", "engine", "models", a.profile)
     x = rs.clip(p, seconds=6.0)
     ok = True
     for scen in ((24.0, 0, 0.05, 3.0), (14.0, 1, 0.1, 4.0)):
@@ -49,9 +51,9 @@ def main():
             raw, npz, sym, out = (os.path.join(d, v) for v in ("x.raw", "m.npz", "a.sym", "o.raw"))
             rs.write_pcm(raw, x)
             s = ",".join(str(float(v)) for v in scen)
-            subprocess.run([os.path.join(rs.BIN, "gfm-gen"), "--profile", "B200", "--pcm", raw, "--seed", "1", "--out", npz, "--scen", s], check=True)
-            subprocess.run([os.path.join(rs.BIN, "gfm-tx"), "--profile", "B200", "--pcm", raw, "--seed", "1", "--scen", s, "--out", sym], check=True)
-            r = subprocess.run([os.path.join(rs.BIN, "gfm-rx"), "--profile", "B200", "--frames", sym, "--out", out, "--models", a.models, "--ort", a.ort],
+            subprocess.run([os.path.join(rs.BIN, "gfm-gen"), "--profile", a.profile, "--pcm", raw, "--seed", "1", "--out", npz, "--scen", s], check=True)
+            subprocess.run([os.path.join(rs.BIN, "gfm-tx"), "--profile", a.profile, "--pcm", raw, "--seed", "1", "--scen", s, "--out", sym], check=True)
+            r = subprocess.run([os.path.join(rs.BIN, "gfm-rx"), "--profile", a.profile, "--frames", sym, "--out", out, "--models", models, "--ort", a.ort],
                                check=True, capture_output=True, text=True)
             y_rs = np.fromfile(out, "<f4").reshape(-1, 2).astype(np.float64)
             z = np.load(npz)
@@ -59,10 +61,10 @@ def main():
             meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit")}, p)
             e0, sd = restore(win, 0, load_mend(a.mend, "cpu"), meta)
             T = len(e0) // 4 * 4
-            o, g = process(load_post(a.post, "cpu"), Transform(), e0[:T], sd[:T], z["status"][0][:T], "cpu")
+            o, g = process(load_post(a.post, "cpu"), Transform(p.transform), e0[:T], sd[:T], z["status"][0][:T], "cpu")
         y_py = lr(o["PostNet"])
         n = len(y_py)
-        ref = lr(Transform().wave(torch.from_numpy(np.ascontiguousarray(z["truth"][:T].reshape(-1, 2, 64).transpose(1, 0, 2)))).numpy())
+        ref = lr(Transform(p.transform).wave(torch.from_numpy(np.ascontiguousarray(z["truth"][:T].reshape(-1, 2, 64).transpose(1, 0, 2)))).numpy())
         diff = 10 * np.log10(((y_rs[:n] - y_py) ** 2).sum() / (ref ** 2).sum())
         snr = lambda y: 10 * np.log10((ref ** 2).sum() / ((y - ref) ** 2).sum())  # noqa: E731
         print(f"scen {s}: Rust と Python の差 {diff:+.1f} dB (原音比)、SNR Rust {snr(y_rs[:n]):+.2f} / Python {snr(y_py):+.2f} dB、"

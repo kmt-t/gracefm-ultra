@@ -1,5 +1,5 @@
 //! MendNet の学習データ生成。使い方:
-//!   gfm-gen --profile B200 --pcm clip.raw --scen e0,fade,rate,burst [--scen ...] --seed 1 --out out.npz [--threads 2] [--start N]
+//!   gfm-gen --profile B200-L --pcm clip.raw --scen e0,fade,rate,burst [--scen ...] --seed 1 --out out.npz [--threads 2] [--start N]
 //! clip.raw: 符号つき 24 bit を int32 で入れた L/R の交互 (リトルエンディアン、満点 = 2^23)。出力の形式は `gfm_core::dataset`。
 
 use gfm_core::channel::Scen;

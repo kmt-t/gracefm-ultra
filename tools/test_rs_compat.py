@@ -23,8 +23,9 @@ from tools.common import wavio  # noqa: E402
 import rs  # noqa: E402
 
 SRC = os.path.join(GRACEFM, "eval_audio", "train_lossless")
-# 本家のエンコーダ → 本家のデコーダでの SNR [dB]（この音源の区間、2 秒）。測定: 2026-11-01
-BASELINE_SNR = {"B200": 55.75, "B200M": 12.49, "M700": 56.80, "M700M": 12.49, "SUB100": 22.83, "SUB50M": 12.12, "SUB100-48K": 25.37}
+# 本家のエンコーダ → 本家のデコーダでの SNR [dB]（この音源の区間、2 秒）。GraceFM 8ba0ae0 で測定
+BASELINE_SNR = {"B200": 55.77, "B200M": 12.49, "M700": 56.77, "M700M": 12.49, "SUB100": 22.83, "SUB50M": 12.12, "SUB100-48K": 25.37,
+                "B200-L": 57.95, "B200M-L": 12.49, "M700-L": 59.31, "M700M-L": 12.49, "SUB100-L": 25.77, "SUB50M-L": 12.29, "SUB100-48K-L": 29.40}
 TOLERANCE_DB = 0.5
 
 

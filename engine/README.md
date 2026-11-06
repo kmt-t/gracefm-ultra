@@ -22,14 +22,14 @@ Python 側の準拠試験（本家の Python が、`gfm-tx` のシンボルを�
 
 ## 使い方
 
-受信には ONNX Runtime（1.31、CPU）の共有ライブラリと、`models/B200/`（`tools/export_onnx.py` が書く mendnet.onnx、postnet.onnx）を使う。
+受信には ONNX Runtime（1.31、CPU）の共有ライブラリと、`models/<プロファイル>/`（`tools/export_onnx.py` が書く mendnet.onnx、postnet.onnx）を使う。
 ONNX Runtime は、リポジトリの `.venv` の onnxruntime（pip）に入っているものを使える。
 
 ```
 export ORT_DYLIB_PATH=$(ls ../.venv/lib/python3.*/site-packages/onnxruntime/capi/libonnxruntime.so.*)
-gfm-tx --profile B200 --pcm clip.raw --scen 20,0,0.05,3 --seed 1 --out a.sym      # 送信 + 通信路
-taskset -c 0,1,5,6,7,11 gfm-rx --profile B200 --frames a.sym --out out.raw --models models/B200   # 受信
-gfm-gen --profile B200 --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 --out data.npz   # 学習データ
+gfm-tx --profile B200-L --pcm clip.raw --scen 20,0,0.05,3 --seed 1 --out a.sym      # 送信 + 通信路
+taskset -c 0,1,5,6,7,11 gfm-rx --profile B200-L --frames a.sym --out out.raw   # 受信（--models の既定は models/<プロファイル>）
+gfm-gen --profile B200-L --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 --out data.npz   # 学習データ
 ```
 
 - `clip.raw`: 符号つき 24 bit を int32（リトルエンディアン）で入れた L/R の交互（満点 = 2^23）
@@ -40,6 +40,6 @@ gfm-gen --profile B200 --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 -
 
 ## 対応範囲
 
-- 送信: B200、B200M、M700、M700M、SUB100、SUB50M、SUB100-48K
-- 受信: B200（MendNet と PostNet を学習したプロファイル）、1 系統
+- 送信: B200、B200M、M700、M700M、SUB100、SUB50M、SUB100-48K と、それぞれの `-L`（LeGall 5/3）。本家と同じく、pid とビット配置が同じで format_id で区別する
+- 受信: B200、B200-L（MendNet と PostNet を学習するプロファイル）、1 系統
 - 未対応: Y 方式（`*Y`）、暗号化、RTL-SDR の I/Q からの同期（等化器とタイミング同期）

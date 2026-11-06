@@ -3,7 +3,7 @@
 //!
 //! 出力（`MendDataset::write` の .npz）は、シナリオ s、フレーム f、係数 nc（= 成分数 × 64。成分ごとに帯域 k = 0〜4 の係数を並べた順）、
 //! 成分数 ncomp、帯域数 nb について:
-//! - `truth` (f, nc) f32: 原音の Haar 係数（満点 = 1.0）
+//! - `truth` (f, nc) f32: 原音の帯域係数（満点 = 1.0）
 //! - `dec` (s, f, nc) f32: Decoder が復号した係数（補間の前。使えないフレームは 0）
 //! - `status` (s, f) u8: 0 = 正常、1 = 高域欠落（基本 CRC は通った）、2 = 壊れた（届いたが基本 CRC が通らない）、3 = 欠落
 //! - `var` (s, f, ncomp, nb) f32: 復号した係数の誤差分散（線形、満点 1.0 に対する二乗）。情報なしは -1
@@ -15,7 +15,7 @@
 //! - `esn0` (s, f) f32、`scen` (s, 4) f32、`start` i64
 
 use crate::channel::{awgn_adc, Link, Scen};
-use crate::codec::analyze;
+use crate::codec::analyze_stream;
 use crate::decoder::{block_steps, Decoder};
 use crate::encoder::Encoder;
 use crate::layout::Layout;
@@ -32,13 +32,13 @@ struct Transmitted {
     syms: Vec<Vec<[f64; 2]>>,
 }
 
-fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]]) -> Result<Transmitted, String> {
-    let nfr = pcm.len() / p.block;
+fn transmit(p: &Profile, lay: &Layout, frames: &[Vec<Vec<Vec<f64>>>]) -> Result<Transmitted, String> {
+    let nfr = frames.len();
     let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
     let mut enc = Encoder::new(p)?;
     let mut t = Transmitted { bits: vec![0; nfr * nbit], step: vec![0.0; nfr * ncoef], syms: Vec::with_capacity(nfr) };
-    for i in 0..nfr {
-        let (bd, stream, sym) = enc.frame_parts(&pcm[i * p.block..(i + 1) * p.block]);
+    for (i, bands) in frames.iter().enumerate() {
+        let (bd, stream, sym) = enc.frame_parts(bands);
         t.syms.push(sym);
         for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
             t.bits[i * nbit + j] = stream[idx];
@@ -110,9 +110,9 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
     let b = p.block;
     let nfr = pcm.len() / b;
     let lay = Layout::new(p)?;
-    let tx = transmit(p, &lay, &pcm[..nfr * b])?;
-    let truth: Vec<f32> =
-        (0..nfr).flat_map(|i| analyze(&pcm[i * b..(i + 1) * b], p).into_iter().flatten().flatten().map(|v| v as f32)).collect();
+    let frames = analyze_stream(&pcm[..nfr * b], p);
+    let tx = transmit(p, &lay, &frames)?;
+    let truth: Vec<f32> = frames.iter().flatten().flatten().flatten().map(|&v| v as f32).collect();
     let rx = parallel_map(scens.len(), threads, |si| {
         let mut link = Link::new(&scens[si], nfr, seed, si as u64);
         let mut dec = Decoder::new(p).expect("プロファイルは検査済み");
@@ -185,7 +185,7 @@ mod tests {
     /// 高 Es/N0 では、受信 LLR の符号が送信した仮数ビットと一致する。欠落フレームの LLR は 0
     #[test]
     fn llr_agrees_with_transmitted_bits() {
-        let p = profile_by_name("B200").unwrap();
+        let p = profile_by_name("B200-L").unwrap();
         let nfr = 200;
         let pcm: Vec<[f64; 2]> = (0..nfr * p.block)
             .map(|n| [0.4 * (n as f64 * 0.05).sin() + 0.1 * (n as f64 * 0.9).sin(), 0.3 * (n as f64 * 0.03).cos()])

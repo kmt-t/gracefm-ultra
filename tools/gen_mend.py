@@ -4,7 +4,7 @@ MendNet の学習データを作る (Rust の engine/gfm-gen を使う)。
 音源 1 本から複数の区間 (seconds + 2 秒の枠ごとに 1 区間) を取り、符号化 → 通信路シナリオ → 復号した観測を data/<profile>/<sub>/<split>/ に書く。
 train / val は音源の番号で分ける (7 本に 1 本が val)。--awgn を与えると、通信路はランダムではなく、その Es/N0 ごとの AWGN のみ (フェージング・人工の欠落なし)。出力は data/<profile>/<sub>/<split>/*.npz (形式は engine/gfm-core/src/dataset.rs)。
 
-  .venv/bin/python tools/gen_mend.py --profile B200 --split train --segments 4 --workers 2 --sub mend
+  .venv/bin/python tools/gen_mend.py --profile B200-L --split train --segments 4 --workers 2 --sub mend
 """
 import argparse
 import os
@@ -85,7 +85,7 @@ def job(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", default="B200")
+    ap.add_argument("--profile", default="B200-L")
     ap.add_argument("--split", choices=["train", "val"], default="train")
     ap.add_argument("--src", default=os.path.join(GRACEFM, "eval_audio", "train_lossless"))
     ap.add_argument("--segments", type=int, default=4, help="音源 1 本あたりの区間数の上限")

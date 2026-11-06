@@ -71,7 +71,7 @@ pub fn block_steps(lay: &Layout, bd: &BlockData, high_ok: bool, out: &mut [f32])
             continue;
         }
         let (Some(e), Some(attn)) = (bd.eidx[ch][k], bd.attn[ch][k].as_ref()) else { continue };
-        let e = e + exp_range(k, p.bits(ch)[k], p).0;
+        let e = e + exp_range(p.bits(ch)[k], p).0;
         let o = lay.coef_offset[&(ch, k)];
         for j in 0..p.ncoef(k) {
             out[o + j] = (2f64.powi((e - p.attn_at(ch, k, attn, j)) as i32) * (1u64 << 22) as f64) as f32;
@@ -107,7 +107,7 @@ pub fn soft_coeffs(lay: &Layout, bd: &BlockData, p1: &[f64], high_ok: bool) -> (
             let (qmax, qmin) = (qmax_of(b) as f64, qmin_of(b) as f64);
             let mant = bd.mant[ch][k].as_ref().unwrap();
             let attn = bd.attn[ch][k].as_ref().unwrap();
-            let e = bd.eidx[ch][k].unwrap() + exp_range(k, b, p).0; // 刻みの指数（満点 = 1.0）
+            let e = bd.eidx[ch][k].unwrap() + exp_range(b, p).0; // 刻みの指数（満点 = 1.0）
             let mut c = Vec::with_capacity(n);
             let mut vs = 0.0;
             for j in 0..n {

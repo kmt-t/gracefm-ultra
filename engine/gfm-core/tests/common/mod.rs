@@ -36,6 +36,27 @@ pub fn stereo(n: usize, seed: u64) -> Vec<[f64; 2]> {
         .collect()
 }
 
+/// 1 フレームだけの音声の量子化
+#[allow(dead_code)]
+pub fn encode_block(x: &[[f64; 2]], p: &gfm_core::profiles::Profile, clip_opt: bool) -> gfm_core::codec::BlockData {
+    gfm_core::codec::quantize(&gfm_core::codec::analyze_stream(x, p)[0], p, clip_opt)
+}
+
 /// 全プロファイル（Y 方式を除く）
 #[allow(dead_code)]
-pub const PROFILES: [&str; 7] = ["B200", "B200M", "M700", "M700M", "SUB100", "SUB50M", "SUB100-48K"];
+pub const PROFILES: [&str; 14] = [
+    "B200",
+    "B200M",
+    "M700",
+    "M700M",
+    "SUB100",
+    "SUB50M",
+    "SUB100-48K",
+    "B200-L",
+    "B200M-L",
+    "M700-L",
+    "M700M-L",
+    "SUB100-L",
+    "SUB50M-L",
+    "SUB100-48K-L",
+];

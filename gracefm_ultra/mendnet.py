@@ -1,7 +1,7 @@
 """
-MendNet: 融合後の Haar 係数のフレーム列 (WIN フレーム)、フレームの状態・誤差分散・ヘッダの信頼度・受信 LLR から、全フレームの仮数ビットの LLR
+MendNet: 復号した帯域係数のフレーム列 (WIN フレーム)、フレームの状態・誤差分散・ヘッダの信頼度・受信 LLR から、全フレームの仮数ビットの LLR
 (受信 LLR への補正) と、ヘッダが復号できないフレームの刻みを非因果に出す。係数は LLR からの事後平均 (soft_e0)。入力と出力の定義は docs/MENDNET.md。
-Haar は直交なので、係数領域の誤差エネルギーは時間領域と同じ。ONNX に出せる演算 (Conv1d, GELU, GroupNorm) だけで組む。
+ONNX に出せる演算 (Conv1d, GELU, GroupNorm) だけで組む。
 """
 import numpy as np
 import torch
@@ -10,19 +10,6 @@ from torch import nn
 WIN = 100
 COUNTS = [4, 4, 8, 16, 32]
 BAND = np.repeat(np.arange(5), COUNTS)
-
-
-def haar_inv(c):
-    c = np.asarray(c, np.float64)
-    a, o = c[..., :4], 4
-    for n in (4, 8, 16, 32):
-        d = c[..., o:o + n]
-        o += n
-        x = np.empty(a.shape[:-1] + (2 * n,))
-        x[..., 0::2] = (a + d) / np.sqrt(2)
-        x[..., 1::2] = (a - d) / np.sqrt(2)
-        a = x
-    return a
 
 
 C_IN_HINT = 143                  # 係数・分散・状態・gap・成分 (74) + 壊れたフレームの手がかり h[64]、q[5]
@@ -123,8 +110,8 @@ def bits_out(y, llr, sf, dstep):
 
 
 def step_of(sf):
-    """刻みの特徴 (step_feature の尺度) → 刻み（満点 = 2^22 の尺度）。実際の刻み (満点の 2^-20〜2^-6) より少し広い範囲に収める"""
-    return Q22 * 2.0 ** (sf * STEP_OFFSET - STEP_OFFSET).clamp(-22, -4)
+    """刻みの特徴 (step_feature の尺度) → 刻み（満点 = 2^22 の尺度）。実際の刻み (満点の 2^-21〜2^-3) より少し広い範囲に収める"""
+    return Q22 * 2.0 ** (sf * STEP_OFFSET - STEP_OFFSET).clamp(-22, -2)
 
 
 def coef_error(llr, step_out, b):
@@ -138,10 +125,11 @@ def coef_error(llr, step_out, b):
     return e * st / Q22 + b["target"] * (ratio - 1)
 
 
-def bits_loss(llr_out, step_out, b, usable):
+def bits_loss(llr_out, step_out, b, usable, power):
     """b: Windows.gather の出力（bits、ok、step、target、pos、coef_of_bit を使う）。
-    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ log(1 + 係数の相対誤差)（相対誤差 = coef_error の二乗和 /（原音 + 量子化の雑音）の二乗和。推定の刻みを使う）。
+    損失 = ビットの BCE（有効なビットの平均）+ 刻みの誤差（log2 の Huber）+ log(1 + 係数の相対誤差)（相対誤差 = coef_error の二乗和 /（原音 + 量子化の雑音）の二乗和。推定の刻みを使う。二乗和は波形でのエネルギー）。
     それぞれ、使えるフレームと使えないフレームで別々に平均して足す。
+    power: 係数ごとの基底のエネルギー (64,)。
     → (損失 (B,), 使えないフレームの BCE (B,), 使えるフレームの BCE (B,))"""
     okf = b["ok"].float()
     bce = torch.nn.functional.binary_cross_entropy_with_logits(-llr_out, b["bits"].float(), reduction="none")      # 正 = 0 なので logit は -LLR
@@ -149,8 +137,9 @@ def bits_loss(llr_out, step_out, b, usable):
     sf_true = step_feature(b["step"])[0]
     st = torch.nn.functional.huber_loss(step_out * STEP_OFFSET, sf_true * STEP_OFFSET, reduction="none").mean(2)
     bad, good = (~usable).float(), usable.float()
-    e2, t2 = (coef_error(llr_out, step_out, b) ** 2).sum(2), (b["target"] ** 2).sum(2)                                    # (B,T)
-    q2 = ((b["step"] / Q22) ** 2).sum(2) / 12 + FLOOR_ABS * b["step"].shape[-1]                                      # 量子化の雑音 + 絶対の下限 (B,T)
+    w = torch.as_tensor(power, dtype=llr_out.dtype, device=llr_out.device)
+    e2, t2 = ((coef_error(llr_out, step_out, b) ** 2) * w).sum(2), ((b["target"] ** 2) * w).sum(2)                        # (B,T)
+    q2 = (((b["step"] / Q22) ** 2) * w).sum(2) / 12 + FLOOR_ABS * b["step"].shape[-1]                                # 量子化の雑音 + 絶対の下限 (B,T)
 
     def mean(v, m):
         return (v * m).sum(1) / m.sum(1).clamp_min(1)
@@ -176,11 +165,6 @@ def run_both(net, per_comp, bit_idx, bit_ok, nbit):
         llr[:, :, bit_idx[ch][ok]] = (l * LLR_SCALE)[:, :, ok]
         step[:, :, ch * 64:(ch + 1) * 64] = step_of(st)
     return llr, step
-
-
-def haar_matrix():
-    """64 点の直交 Haar 合成行列 H (係数 (.., 64) @ H = サンプル (.., 64))。haar_inv と同じ並び"""
-    return np.stack([haar_inv(np.eye(64)[i]) for i in range(64)])
 
 
 class Meta:

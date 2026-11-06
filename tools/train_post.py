@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 PostNet (MDCT 領域の超解像) の学習。data/<profile>/post/{train,val} (gen_post.py) の、確定した MendNet の出力から切り出す。
-切り出しは、損失に入るフレームで超解像をかける判定 (postnet.gate: 元の音質が良いとき) が全部オンのところだけ (文脈はオフでもよい)。切り出しは CROP フレーム (Haar) = MDCT の F フレーム。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
+切り出しは、損失に入るフレームで超解像をかける判定 (postnet.gate: 元の音質が良いとき) が全部オンのところだけ (文脈はオフでもよい)。切り出しは CROP フレーム = MDCT の F フレーム (合成の文脈に前後 REACH フレームを足す)。先頭 SKIP フレーム (MDCT) は因果の段の文脈なので、損失に入れない。
 損失は postnet.post_loss (帯域ごとの相対誤差の対数 + 複数解像度の対数振幅)。
 
-  .venv/bin/python tools/train_post.py --profile B200 --minutes 120 --out runs/post_B200.pt
+  .venv/bin/python tools/train_post.py --profile B200-L --minutes 120 --out runs/post_B200-L.pt
 """
 import argparse
 import glob
@@ -16,14 +16,18 @@ import numpy as np
 import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
+sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
+from gracefm.profiles import PROFILES  # noqa: E402
+from gracefm_ultra.transform import REACH  # noqa: E402
 from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, gate, post_loss, receptive_past  # noqa: E402
 
 F = 192                                   # MDCT のフレーム数
-CROP = (F + 1) * M // FRAME               # Haar のフレーム数
+CROP = (F + 1) * M // FRAME               # フレーム数
 SKIP = 96
-LEAD = SKIP * M // FRAME                  # 判定を問わない先頭の Haar フレーム数 (文脈だけ。オフの所から入る切り替わり目も学ぶ)
+LEAD = SKIP * M // FRAME                  # 判定を問わない先頭のフレーム数 (文脈だけ。オフの所から入る切り替わり目も学ぶ)
 HIGH = 64                                 # 検証で別に見る高い帯域の下端のビン (4 kHz)
 assert SKIP >= receptive_past()
 
@@ -32,14 +36,15 @@ class Crops:
     """区間・全シナリオの MendNet の出力と原音を (CPU に) 保持して、損失に入るフレーム (先頭 LEAD より後) で
     超解像をかける判定が全部オンのところを切り出す"""
 
-    def __init__(self, files):
+    def __init__(self, files, power):
         self.e0, self.sd, self.truth, self.status, self.starts = [], [], [], [], []
         for f in files:
             z = np.load(f)
             st = []
             for sc in range(z["e0"].shape[0]):
-                off = np.concatenate([[0], np.cumsum(~gate(z["e0"][sc], z["sd"][sc], z["status"][sc]))])
+                off = np.concatenate([[0], np.cumsum(~gate(z["e0"][sc], z["sd"][sc], z["status"][sc], power))])
                 a = np.flatnonzero(off[CROP:] == off[LEAD:len(off) - CROP + LEAD])
+                a = a[(a >= REACH) & (a + CROP + REACH <= len(off) - 1)]
                 if len(a):
                     st.append((sc, a))
             if not st:
@@ -60,22 +65,22 @@ class Crops:
         return out
 
     def gather(self, locs, dev):
-        """→ (e0, sd, truth (N, CROP, 64), status (N, CROP), comp (N,))"""
-        e0, sd, tr, st = [], [], [], []
+        """→ (e0, sd, truth (N, REACH + CROP + REACH, 64), comp (N,))"""
+        e0, sd, tr = [], [], []
         for si, sc, a, ch in locs:
             sl = slice(ch * 64, ch * 64 + 64)
-            e0.append(self.e0[si][sc, a:a + CROP, sl])
-            sd.append(self.sd[si][sc, a:a + CROP, sl].float())
-            tr.append(self.truth[si][a:a + CROP, sl])
-            st.append(self.status[si][sc, a:a + CROP])
+            t = slice(a - REACH, a + CROP + REACH)
+            e0.append(self.e0[si][sc, t, sl])
+            sd.append(self.sd[si][sc, t, sl].float())
+            tr.append(self.truth[si][t, sl])
         f = lambda v: torch.stack(v).to(dev)  # noqa: E731
-        return f(e0), f(sd), f(tr), f(st), torch.tensor([x[3] for x in locs], device=dev)
+        return f(e0), f(sd), f(tr), torch.tensor([x[3] for x in locs], device=dev)
 
 
 def forward(net, tf, b):
     """→ (損失 (N,), 二乗和 (推定の誤差、入力の誤差、原音) × (全帯域、HIGH 以上) (6,))。二乗和は先頭 SKIP フレームを除く"""
-    e0, sd, truth, _, comp = b
-    X, var, T = tf.mdct(tf.wave(e0)), tf.mdct_var(tf.wave_var(sd)), tf.mdct(tf.wave(truth))
+    e0, sd, truth, comp = b
+    X, var, T = tf.mdct(tf.wave(e0, REACH)), tf.mdct_var(tf.wave_var(sd, REACH)), tf.mdct(tf.wave(truth, REACH))
     Y = net(X, var, comp)
     loss = post_loss(tf, Y, T, SKIP)
     sq = lambda v, a: (v[:, a:, SKIP:] ** 2).sum().item()  # noqa: E731
@@ -84,7 +89,7 @@ def forward(net, tf, b):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", default="B200")
+    ap.add_argument("--profile", default="B200-L")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--minutes", type=float, default=120)
     ap.add_argument("--bs", type=int, default=16)
@@ -98,9 +103,9 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     rng = np.random.default_rng(0)
     d = os.path.join(a.data, a.profile, "post")
-    tr = Crops(sorted(glob.glob(os.path.join(d, "train", "*.npz"))))
-    va = Crops(sorted(glob.glob(os.path.join(d, "val", "*.npz"))))
-    tf = Transform().to(dev)
+    tf = Transform(PROFILES[a.profile].transform).to(dev)
+    tr = Crops(sorted(glob.glob(os.path.join(d, "train", "*.npz"))), tf.power)
+    va = Crops(sorted(glob.glob(os.path.join(d, "val", "*.npz"))), tf.power)
     cfg = dict(ch=256)
     net = PostNet(**cfg).to(dev)
     if a.resume:

@@ -1,8 +1,7 @@
 //! フレーム化（pack / unpack）と、量子化結果の往復。
 
 mod common;
-use common::{stereo, PROFILES};
-use gfm_core::codec::encode_block;
+use common::{encode_block, stereo, PROFILES};
 use gfm_core::framing::*;
 use gfm_core::layout::Layout;
 use gfm_core::profiles::profile_by_name;
@@ -33,7 +32,7 @@ fn pack_unpack_round_trip() {
 
 #[test]
 fn header_of_another_profile_is_rejected() {
-    let (a, b) = (profile_by_name("B200").unwrap(), profile_by_name("B200M").unwrap());
+    let (a, b) = (profile_by_name("B200-L").unwrap(), profile_by_name("B200M-L").unwrap());
     let (lay_a, lay_b) = (Layout::new(&a).unwrap(), Layout::new(&b).unwrap());
     let bd = encode_block(&stereo(64, 1), &a, true);
     let stream = pack(&lay_a, &bd, 0, 0);
@@ -46,7 +45,7 @@ fn header_of_another_profile_is_rejected() {
 
 #[test]
 fn heavy_corruption_fails_the_crc() {
-    let p = profile_by_name("B200").unwrap();
+    let p = profile_by_name("B200-L").unwrap();
     let lay = Layout::new(&p).unwrap();
     let bd = encode_block(&stereo(64, 2), &p, true);
     let stream = pack(&lay, &bd, 0, 0);
@@ -61,7 +60,7 @@ fn heavy_corruption_fails_the_crc() {
 
 #[test]
 fn recovery_returns_the_plain_result_when_the_frame_is_fine() {
-    let p = profile_by_name("M700").unwrap();
+    let p = profile_by_name("M700-L").unwrap();
     let lay = Layout::new(&p).unwrap();
     let bd = encode_block(&stereo(64, 3), &p, true);
     let stream = pack(&lay, &bd, 1, 7);
@@ -72,7 +71,7 @@ fn recovery_returns_the_plain_result_when_the_frame_is_fine() {
 
 #[test]
 fn coefficient_bits_reassemble_the_mantissa() {
-    let p = profile_by_name("B200").unwrap();
+    let p = profile_by_name("B200-L").unwrap();
     let lay = Layout::new(&p).unwrap();
     let bd = encode_block(&stereo(64, 4), &p, true);
     let bits = coefficient_bits(&lay, &bd);

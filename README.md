@@ -2,10 +2,10 @@
 
 [GraceFM](../gracefm) のビットストリームを、PCグレードの受信機（RTL-SDRなど）で高性能に復号する受信側の実装。送信側とフレーム形式は変えない。
 
-受信は、フレームの復号のあとに 2 つの網を置く（B200 プロファイル、1 系統）。
+受信は、フレームの復号のあとに 2 つの網を置く（1 系統）。本家と同じく Haar（S 変換）と LeGall 5/3（名前の末尾が `-L`）の両方の帯域分割を扱い、網はプロファイルごとに学習する。対象は B200 と B200-L。
 
 - **MendNet**（`docs/MENDNET.md`）: 前後 100 フレームの文脈、受信 LLR、壊れたフレームに残る手がかりから、欠落・壊れたフレームを補間し、使えるフレームのビット誤りを補正する。係数（事後平均）と、その怪しさ（事後標準偏差）を出す。
-- **PostNet**（`docs/POSTNET.md`）: MDCT 領域の超解像。Haar の量子化の雑音の床に沈んだ弱い高域（ピアノの倍音など）を復元する。MendNet の事後標準偏差から出す予測の SNR で、元の音質が良いとき（C/N0 68 dB-Hz あたりから）だけかける。
+- **PostNet**（`docs/POSTNET.md`）: MDCT 領域の超解像。量子化の雑音の床に沈んだ弱い高域（ピアノの倍音など）を復元する。MendNet の事後標準偏差から出す予測の SNR で、元の音質が良いとき（C/N0 68 dB-Hz あたりから）だけかける。
 
 受信機は Rust + ONNX Runtime（`engine/`、`docs/DESIGN.md`）。フレームを 1 つずつ受け、制約は遅延 200 ms まで、メモリ 2 GB まで。シミュレーションのシンボルからの処理で、遅延は約 165 ms（補間の確定待ち 150 ms + 計算）、メモリは約 85 MB（`docs/DESIGN.md`）。
 
@@ -29,21 +29,23 @@
 
 ## ディレクトリ
 
-- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
-- `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）。`engine/models/B200/` に受信が使う ONNX
+- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、帯域分割の合成（`transform.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
+- `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）。受信が使う ONNX は `tools/export_onnx.py` が `engine/models/<プロファイル>/` に書く（学習したモデルはまだリポジトリに入っていない）
 - `tools/`: 音源の収集（`collect_audio.py`）、データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendnet.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_post.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）
 - `runs/`: 学習・評価のスクリプトとログ（git 管理外）
 
 ## 学習から受信まで
 
 ```
-.venv/bin/python tools/gen_mend.py --profile B200 --split train --sub mend          # MendNet の学習データ（gfm-gen）
-.venv/bin/python tools/train_mendnet.py --profile B200 --out runs/mendnet_B200.pt    # MendNet
-.venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend --split train --out train   # PostNet の学習データ
-.venv/bin/python tools/train_post.py --profile B200 --out runs/post_B200.pt           # PostNet
-.venv/bin/python tools/export_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt --out engine/models/B200
-.venv/bin/python tools/test_rx_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt   # Rust の受信と Python の一致
+.venv/bin/python tools/gen_mend.py --profile B200-L --split train --sub mend          # MendNet の学習データ（gfm-gen）
+.venv/bin/python tools/train_mendnet.py --profile B200-L --out runs/mendnet_B200-L.pt    # MendNet
+.venv/bin/python tools/gen_post.py --profile B200-L --ckpt runs/mendnet_B200-L.pt --src mend --split train --out train   # PostNet の学習データ
+.venv/bin/python tools/train_post.py --profile B200-L --out runs/post_B200-L.pt           # PostNet
+.venv/bin/python tools/export_onnx.py --profile B200-L --mend runs/mendnet_B200-L.pt --post runs/post_B200-L.pt --out engine/models/B200-L
+.venv/bin/python tools/test_rx_onnx.py --profile B200-L --mend runs/mendnet_B200-L.pt --post runs/post_B200-L.pt   # Rust の受信と Python の一致
 ```
+
+B200 も `--profile` を替えるだけで同じ手順になる。
 
 ## 設計
 

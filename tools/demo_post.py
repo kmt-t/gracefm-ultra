@@ -3,7 +3,7 @@
 PostNet の試聴用の音。data/<profile>/post/awgn_val の区間から、指定した Es/N0 ごとに、原音・復号のまま・MendNet・PostNet を
 ステレオ 32 kHz の WAV (float32、正規化しない) で書く。PostNet は超解像をかける判定 (postnet.gate) がオフのところは MendNet のまま。
 
-  .venv/bin/python tools/demo_post.py --ckpt runs/post_B200.pt --match Chopin_-_Waltz,Scarlatti,C418_-_Mixes --esn0 18,20,30
+  .venv/bin/python tools/demo_post.py --ckpt runs/post_B200-L.pt --match Chopin_-_Waltz,Scarlatti,C418_-_Mixes --esn0 18,20,30
 """
 import argparse
 import glob
@@ -15,9 +15,12 @@ import soundfile as sf
 import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"))
+sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
+from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.postnet import Transform  # noqa: E402
 from eval_post import load, lr, process, wave_of  # noqa: E402
 from eval_mendnet import CN_OFFSET  # noqa: E402
@@ -27,7 +30,7 @@ FS = 32000
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", default="B200")
+    ap.add_argument("--profile", default="B200-L")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--match", required=True, help="区間のファイル名に含む文字列 (カンマ区切り)。それぞれ最初の 1 区間を使う")
@@ -37,7 +40,8 @@ def main():
     pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    net, tf, tfc = load(a.ckpt, dev), Transform().to(dev), Transform()
+    kind = PROFILES[a.profile].transform
+    net, tf, tfc = load(a.ckpt, dev), Transform(kind).to(dev), Transform(kind)
     d = os.path.join(a.data, a.profile)
     files = sorted(glob.glob(os.path.join(d, "post", "awgn_val", "*.npz")))
     os.makedirs(a.out, exist_ok=True)

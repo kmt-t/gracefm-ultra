@@ -1,5 +1,5 @@
 //! 受信（復号、MendNet、PostNet。`gfm_core::receiver`）。フレームを 1 つずつ受信機に入れる（実際の受信と同じ流れ）。使い方:
-//!   gfm-rx --profile B200 --frames a.sym --out out.raw [--models models/B200] [--ort libonnxruntime.so] [--threads 2]
+//!   gfm-rx --profile B200-L --frames a.sym --out out.raw [--models models/<profile>] [--ort libonnxruntime.so] [--threads 2]
 //! a.sym（gfm-tx の出力）: u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 //! out.raw: L/R の交互の f32（満点 ±1）、フレーム数 × ブロック長のサンプル。
 //! --models: mendnet.onnx と postnet.onnx のディレクトリ（`tools/export_onnx.py` が書く）。
@@ -7,7 +7,7 @@
 //! 標準エラー出力に、フレームの統計、超解像をかけた割合と切り替えの回数、処理時間（実時間比）、推論の処理時間（最初の 1 回と、残りの中央値・99%・最大）、
 //! 遅延（確定待ち + 最初を除く最大の処理時間）、最大の常駐メモリを書く。
 
-use gfm_core::post::{PostInput, PostModel, PostOutput, BINS, LOOKAHEAD, MDCT_HOP};
+use gfm_core::post::{PostInput, PostModel, PostOutput, BINS, LOOKAHEAD, MDCT_HOP, REACH};
 use gfm_core::profiles::profile_by_name;
 use gfm_core::receiver::Receiver;
 use gfm_core::restore::{MendBatch, MendModel, DELAY, NC, WIN};
@@ -103,7 +103,7 @@ impl PostModel for OrtPost {
     }
 
     fn step(&mut self, x: &PostInput) -> Result<PostOutput, String> {
-        let (f, n) = (x.frames, MDCT_HOP * (x.frames + 1));
+        let (f, n) = (x.frames, MDCT_HOP * (x.frames + 1) + 2 * REACH);
         let mut inputs = ort::inputs![
             "e0" => tensor(&[2, n, NC], x.e0)?,
             "sd" => tensor(&[2, n, NC], x.sd)?,
@@ -134,7 +134,7 @@ fn peak_rss_mb() -> f64 {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (mut profile, mut frames, mut out) = (String::new(), String::new(), String::new());
-    let mut models = "models/B200".to_string();
+    let mut models = String::new();
     let mut ort_path = std::env::var("ORT_DYLIB_PATH").unwrap_or_default();
     let mut threads = 2usize;
     let mut i = 1;
@@ -155,6 +155,9 @@ fn main() {
         panic!("ONNX Runtime の共有ライブラリを --ort か ORT_DYLIB_PATH で指定してください");
     }
     let p = profile_by_name(&profile).unwrap_or_else(|| panic!("不明なプロファイル: {}", profile));
+    if models.is_empty() {
+        models = format!("models/{}", profile);
+    }
     let env = ort::init_from(&ort_path)
         .unwrap_or_else(|e| panic!("{}: {}", ort_path, e))
         .build()

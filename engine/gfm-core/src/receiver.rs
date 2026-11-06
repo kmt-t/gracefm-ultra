@@ -27,7 +27,7 @@ impl<M: MendModel, P: PostModel> Receiver<M, P> {
         }
         let dec = Decoder::new(p)?;
         let mender = Mender::new(&dec.lay, mend);
-        Ok(Receiver { dec, mender, gate: Gate::new(), post: PostFilter::new(post), post_on: 0, switches: 0 })
+        Ok(Receiver { dec, mender, gate: Gate::new(p), post: PostFilter::new(post), post_on: 0, switches: 0 })
     }
 
     /// 次のフレームのシンボル（届かなければ None）→ 出せるようになった音声（L/R、満点 ±1。空か HOP × 64 サンプル前後）

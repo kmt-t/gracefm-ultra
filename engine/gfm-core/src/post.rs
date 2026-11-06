@@ -1,6 +1,6 @@
 //! 後段（PostNet、MDCT 領域の超解像）: 補間した係数 → 音声。判定がオフの MDCT フレームは MendNet の係数のまま（網の中で切り替える）。
 //! PostNet は段ごとに過去の入力を持ち越して逐次に回す（`tools/export_onnx.py` の postnet.onnx）。MDCT のフレーム f は波形 [256(f−1), 256(f+1))、
-//! Haar フレーム [4f − 4, 4f + 4) にかかる。PostNet の出力のフレーム f は、MDCT のフレーム f + LOOKAHEAD までを見る。
+//! フレーム [4f − 4, 4f + 4) にかかる。波形の合成には前後 REACH フレームの係数も要る。PostNet の出力のフレーム f は、MDCT のフレーム f + LOOKAHEAD までを見る。
 //! 確定したフレームだけで決まる位置まで状態を進め、その先（暫定のフレームに頼る部分）は毎回計算し直す。
 //! 全体を一度に通したのと同じ出力になる（先読みが暫定値のぶんを除く）。
 
@@ -8,18 +8,20 @@ use std::collections::VecDeque;
 
 use crate::restore::{Restored, NC};
 
-/// MDCT のホップ [Haar フレーム]（256 サンプル）
+/// MDCT のホップ [フレーム]（256 サンプル）
 pub const MDCT_HOP: usize = 4;
 /// MDCT のビン数
 pub const BINS: usize = MDCT_HOP * NC;
 /// PostNet の先読み [MDCT フレーム]
 pub const LOOKAHEAD: usize = 2;
-/// 先読みに使う暫定のフレームの最大数 [Haar フレーム]
-pub const AHEAD: usize = MDCT_HOP * (LOOKAHEAD + 2) - 1;
+/// 先読みに使う暫定のフレームの最大数 [フレーム]
+pub const AHEAD: usize = MDCT_HOP * (LOOKAHEAD + 2) - 1 + REACH;
+/// フレームの係数が届く隣のフレーム数（前 15、後 16 サンプル）
+pub const REACH: usize = 1;
 
 /// PostNet の 1 歩の入力。MDCT のフレーム [k, k + frames) を処理して、PostNet の出力 [k, k + frames − LOOKAHEAD) を出す
 pub struct PostInput<'a> {
-    /// (2, 4·frames + 4, 64) M/S の Haar フレーム [4k − 4, 4k + 4·frames)
+    /// (2, 4·frames + 4 + 2·REACH, 64) M/S のフレーム [4k − 4 − REACH, 4k + 4·frames + REACH)
     pub e0: &'a [f32],
     pub sd: &'a [f32],
     pub frames: usize,
@@ -54,10 +56,10 @@ pub struct PostFilter<P: PostModel> {
     yprev: Vec<f32>,
     /// 状態の位置（MDCT のフレーム）
     k: usize,
-    /// 確定したフレームと判定。先頭は Haar フレーム start（= max(4k − 4, 0)）
+    /// 確定したフレームと判定。先頭はフレーム start（= max(4k − 4 − REACH, 0)）
     hist: VecDeque<(Restored, bool)>,
     start: usize,
-    /// 音声にした Haar フレームの数
+    /// 音声にした フレームの数
     done: usize,
 }
 
@@ -80,12 +82,12 @@ impl<P: PostModel> PostFilter<P> {
         // 音声 [64·done, 64·c) を出すのに要る MDCT のフレーム [k, e)
         let e = c.div_ceil(MDCT_HOP) + LOOKAHEAD + 1;
         let (f, l) = (e - k, e - k - LOOKAHEAD);
-        let n = MDCT_HOP * (f + 1);
+        let n = MDCT_HOP * (f + 1) + 2 * REACH;
         let (mut e0, mut sd) = (vec![0f32; 2 * n * NC], vec![0f32; 2 * n * NC]);
-        // Haar フレームの判定。ストリームの前後はオンとみなす（全体を一度に通すときと同じ）
+        // フレームの判定。ストリームの前後はオンとみなす（全体を一度に通すときと同じ）
         let mut gate = vec![true; n];
         for (i, g) in gate.iter_mut().enumerate() {
-            let Some(h) = (MDCT_HOP * k + i).checked_sub(MDCT_HOP) else { continue };
+            let Some(h) = (MDCT_HOP * k + i).checked_sub(MDCT_HOP + REACH) else { continue };
             let r = if h < c {
                 let (r, on) = &self.hist[h - self.start];
                 *g = *on;
@@ -102,8 +104,8 @@ impl<P: PostModel> PostFilter<P> {
                 }
             }
         }
-        // MDCT のフレーム k + j の判定: かかる Haar フレーム（この歩の [4j, 4j + 8)）が全部オン
-        let on: Vec<f32> = (0..l).map(|j| gate[MDCT_HOP * j..MDCT_HOP * (j + 2)].iter().all(|&x| x) as u8 as f32).collect();
+        // MDCT のフレーム k + j の判定: かかる フレーム（この歩の [REACH + 4j, REACH + 4j + 8)）が全部オン
+        let on: Vec<f32> = (0..l).map(|j| gate[REACH + MDCT_HOP * j..REACH + MDCT_HOP * (j + 2)].iter().all(|&x| x) as u8 as f32).collect();
         let out = self.model.step(&PostInput { e0: &e0, sd: &sd, frames: f, on: &on, yprev: &self.yprev, cache: &self.cache })?;
         // 音声 [256(k − 1), …) から、[64·done, 64·c) を採る
         let (len, off) = (l * BINS, BINS * k);
@@ -114,7 +116,7 @@ impl<P: PostModel> PostFilter<P> {
         Ok(pcm)
     }
 
-    /// 確定した Haar フレーム c だけで決まる位置まで、状態を進める
+    /// 確定した フレーム c だけで決まる位置まで、状態を進める
     fn commit(&mut self, c: usize, out: &PostOutput) {
         let k = self.k;
         let k2 = (c / MDCT_HOP).saturating_sub(LOOKAHEAD).max(k);
@@ -131,7 +133,7 @@ impl<P: PostModel> PostFilter<P> {
                 *y = out.y[row * l + k2 - k - 1];
             }
         }
-        let start = (MDCT_HOP * k2).saturating_sub(MDCT_HOP);
+        let start = (MDCT_HOP * k2).saturating_sub(MDCT_HOP + REACH);
         self.hist.drain(..start - self.start);
         self.start = start;
         self.k = k2;

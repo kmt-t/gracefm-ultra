@@ -3,7 +3,7 @@
 use gfm_core::decoder::{BandVar, DecodedFrame, Status};
 use gfm_core::gate::{self, Gate};
 use gfm_core::layout::Layout;
-use gfm_core::post::{PostFilter, PostInput, PostModel, PostOutput, BINS, LOOKAHEAD, MDCT_HOP};
+use gfm_core::post::{PostFilter, PostInput, PostModel, PostOutput, BINS, LOOKAHEAD, MDCT_HOP, REACH};
 use gfm_core::profiles::profile_by_name;
 use gfm_core::restore::{MendBatch, MendModel, Mender, Observation, Restored, HOP, NC, WIN};
 
@@ -16,7 +16,7 @@ impl MendModel for EchoMend {
     }
 }
 
-/// 音声 = e0（係数をそのまま標本とみなす）。音声 [256(k − 1), …) は、入力の Haar フレーム [4k − 4, …) と同じ位置
+/// 音声 = e0（係数をそのまま標本とみなす）。音声 [256(k − 1), …) は、入力のフレーム [4k − 4, …) と同じ位置
 struct EchoPost;
 
 const DIMS: [(usize, usize); 2] = [(3, 1), (2, 4)];
@@ -28,8 +28,8 @@ impl PostModel for EchoPost {
 
     fn step(&mut self, x: &PostInput) -> Result<PostOutput, String> {
         let l = x.frames - LOOKAHEAD;
-        let n = MDCT_HOP * (x.frames + 1) * NC;
-        let audio = (0..2).flat_map(|ch| x.e0[ch * n..ch * n + l * BINS].iter().copied()).collect();
+        let n = (MDCT_HOP * (x.frames + 1) + 2 * REACH) * NC;
+        let audio = (0..2).flat_map(|ch| x.e0[ch * n + REACH * NC..ch * n + REACH * NC + l * BINS].iter().copied()).collect();
         let u = DIMS.iter().map(|&(c, w)| vec![0.0; 2 * c * (w + x.frames)]).collect();
         Ok(PostOutput { audio, y: vec![0.0; 2 * BINS * l], u })
     }
@@ -37,7 +37,7 @@ impl PostModel for EchoPost {
 
 /// フレーム i の係数がすべて i（M）と −i（S）のフレーム
 fn frame(i: usize, nb: usize) -> DecodedFrame {
-    let p = profile_by_name("B200").unwrap();
+    let p = profile_by_name("B200-L").unwrap();
     let coef = (0..2).map(|ch| (0..nb).map(|k| vec![if ch == 0 { i as f64 } else { -(i as f64) }; p.ncoef(k)]).collect()).collect();
     let var: BandVar = Default::default();
     DecodedFrame { status: Status::Ok, coef, var, llr: Vec::new(), header: None, gap: 0.0, hint: None }
@@ -45,7 +45,7 @@ fn frame(i: usize, nb: usize) -> DecodedFrame {
 
 #[test]
 fn mender_emits_every_frame_once_in_order() {
-    let p = profile_by_name("B200").unwrap();
+    let p = profile_by_name("B200-L").unwrap();
     let lay = Layout::new(&p).unwrap();
     let mut m = Mender::new(&lay, EchoMend);
     let n = 437;
@@ -87,7 +87,7 @@ fn post_filter_output_matches_the_input_frames() {
 
 #[test]
 fn gate_turns_on_after_a_second_with_hysteresis() {
-    let mut g = Gate::new();
+    let mut g = Gate::new(&profile_by_name("B200-L").unwrap());
     let r = |snr_db: f64| Restored { e0: vec![1.0; 2 * NC], sd: vec![10f64.powf(-snr_db / 20.0) as f32; 2 * NC], usable: true };
     for _ in 0..gate::WIN {
         assert!(!g.push(&r(40.0)), "過去が揃うまではオフ");

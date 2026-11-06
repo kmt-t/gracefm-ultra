@@ -5,7 +5,7 @@
 //! アッテネータは、区間ごとに 1 bit で刻みを半分にする（仮数の最下位 bit を細かく使う）。指数は、帯域ごとに固定した範囲 [emin, emax] の
 //! 添字として送る（ビット列の形式）。
 
-use crate::profiles::{band_level, Profile};
+use crate::profiles::Profile;
 
 /// 指数の基準（刻みの最小は 2^(1 - FRAC) = 2^-21）
 pub const FRAC: i64 = 22;
@@ -23,10 +23,9 @@ pub fn offset_of(b: i64) -> i64 {
     qmax_of(b)
 }
 
-/// 帯域 k・仮数幅 b で固定する指数範囲 [emin, emax]
-pub fn exp_range(k: usize, b: i64, p: &Profile) -> (i64, i64) {
-    let lev = band_level(k, p.levels) as i64;
-    let emax = (lev >> 1) + 3 - b;
+/// 仮数幅 b で固定する指数範囲 [emin, emax]
+pub fn exp_range(b: i64, p: &Profile) -> (i64, i64) {
+    let emax = 4 - b;
     let emin = emax - ((1i64 << p.exp_bits) - 1);
     (emin, emax)
 }
@@ -61,7 +60,7 @@ pub fn quantize_band(c: &[f64], ch: usize, k: usize, p: &Profile, clip_opt: bool
     let b = p.bits(ch)[k];
     let group = p.attenuator_group(ch, k);
     let (qmax, qmin) = (qmax_of(b), qmin_of(b));
-    let (emin, emax) = exp_range(k, b, p);
+    let (emin, emax) = exp_range(b, p);
     let peak = c.iter().fold(0f64, |a, v| a.max(v.abs()));
     let e_floor = emin.max(1 - FRAC);
     let e0 = shared_exponent(peak, qmax, e_floor, emax);
@@ -109,7 +108,7 @@ pub fn quantize_band(c: &[f64], ch: usize, k: usize, p: &Profile, clip_opt: bool
     (m, e - emin, a)
 }
 
-/// analyze の出力 → BlockData（帯域ごとの仮数・指数・アッテネータ）。b = 0 の帯域は None
+/// 1 フレームの帯域係数 → BlockData（帯域ごとの仮数・指数・アッテネータ）。b = 0 の帯域は None
 pub fn quantize(bands: &[Vec<Vec<f64>>], p: &Profile, clip_opt: bool) -> BlockData {
     let nb = p.nbands();
     let mut bd = BlockData { mant: vec![vec![None; nb]; 2], eidx: vec![vec![None; nb]; 2], attn: vec![vec![None; nb]; 2] };

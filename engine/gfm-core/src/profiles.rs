@@ -1,12 +1,21 @@
-//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。Y 方式と暗号化は未対応）。
+//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。Y 方式と暗号化は未対応）。名前の末尾が `-L` なら LeGall 5/3、それ以外は Haar で、pid とビット配置は同じ。
 
 /// 帯域数の上限（低域近似 1 + 詳細帯域 levels。登録プロファイルはすべて 5）
 pub const MAX_BANDS: usize = 5;
 
+/// 帯域分割
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transform {
+    /// S 変換。ブロックの中で完結する（format_id 3）
+    Haar,
+    /// ブロックをまたぐ（format_id 2）
+    LeGall53,
+}
+
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub pid: u32,
-    pub name: &'static str,
+    pub name: String,
     pub fs: u32,
     pub block: usize,
     pub levels: usize,
@@ -21,6 +30,7 @@ pub struct Profile {
     pub attn_group_m: [usize; MAX_BANDS],
     pub attn_group_s: [usize; MAX_BANDS],
     pub y_start_k: Option<usize>,
+    pub transform: Transform,
     pub format_id: u32,
 }
 
@@ -95,7 +105,6 @@ impl Profile {
 #[allow(clippy::too_many_arguments)]
 fn row(
     pid: u32,
-    name: &'static str,
     fs: u32,
     bits_m: [i64; MAX_BANDS],
     bits_s: [i64; MAX_BANDS],
@@ -109,7 +118,7 @@ fn row(
 ) -> Profile {
     Profile {
         pid,
-        name,
+        name: String::new(),
         fs,
         block: 64,
         levels: levels_for(fs, 64),
@@ -124,20 +133,29 @@ fn row(
         attn_group_m: attn_m,
         attn_group_s: attn_s,
         y_start_k: y,
+        transform: Transform::Haar,
         format_id: 3,
     }
 }
 
 pub fn profile_by_name(name: &str) -> Option<Profile> {
+    let (base, transform, format_id) = match name.strip_suffix("-L") {
+        Some(base) => (base, Transform::LeGall53, 2),
+        None => (name, Transform::Haar, 3),
+    };
+    let row = base_row(base)?;
+    Some(Profile { name: name.to_string(), transform, format_id, ..row })
+}
+
+fn base_row(name: &str) -> Option<Profile> {
     let z = [0i64; MAX_BANDS];
     let z5 = [0usize; MAX_BANDS];
     let p2 = [2usize, 1, 1, 1, 1];
     let q1 = [1usize; MAX_BANDS];
     Some(match name {
-        "B200M" => row(1, "B200M", 32000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 3, 3, 3]), Some(z), [0, 0, 2, 0, 4], z5, None),
+        "B200M" => row(1, 32000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 3, 3, 3]), Some(z), [0, 0, 2, 0, 4], z5, None),
         "B200" => row(
             2,
-            "B200",
             32000,
             [10, 11, 7, 7, 7],
             [10, 7, 7, 7, 7],
@@ -149,10 +167,9 @@ pub fn profile_by_name(name: &str) -> Option<Profile> {
             [0, 0, 2, 0, 4],
             None,
         ),
-        "B200MY" => row(3, "B200MY", 32000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 1, 1, 1]), Some(z), [0, 0, 2, 4, 8], z5, Some(2)),
+        "B200MY" => row(3, 32000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 1, 1, 1]), Some(z), [0, 0, 2, 4, 8], z5, Some(2)),
         "B200Y" => row(
             4,
-            "B200Y",
             32000,
             [10, 11, 7, 7, 7],
             [10, 11, 7, 7, 7],
@@ -164,14 +181,11 @@ pub fn profile_by_name(name: &str) -> Option<Profile> {
             [0, 0, 2, 4, 8],
             Some(2),
         ),
-        "SUB50M" => row(5, "SUB50M", 32000, [7, 5, 3, 0, 0], z, q1, false, None, None, [0, 0, 4, 0, 0], z5, None),
-        "SUB100" => {
-            row(6, "SUB100", 32000, [7, 7, 3, 0, 0], [5, 3, 3, 0, 0], q1, false, None, None, [0, 0, 4, 0, 0], [0, 0, 4, 0, 0], None)
-        }
-        "M700M" => row(7, "M700M", 48000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 3, 3, 3]), Some(z), [0, 0, 2, 0, 4], z5, None),
+        "SUB50M" => row(5, 32000, [7, 5, 3, 0, 0], z, q1, false, None, None, [0, 0, 4, 0, 0], z5, None),
+        "SUB100" => row(6, 32000, [7, 7, 3, 0, 0], [5, 3, 3, 0, 0], q1, false, None, None, [0, 0, 4, 0, 0], [0, 0, 4, 0, 0], None),
+        "M700M" => row(7, 48000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 3, 3, 3]), Some(z), [0, 0, 2, 0, 4], z5, None),
         "M700" => row(
             8,
-            "M700",
             48000,
             [10, 11, 7, 7, 7],
             [10, 7, 7, 7, 3],
@@ -183,10 +197,9 @@ pub fn profile_by_name(name: &str) -> Option<Profile> {
             [0, 0, 2, 0, 4],
             None,
         ),
-        "M700MY" => row(9, "M700MY", 48000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 1, 1, 1]), Some(z), [0, 0, 2, 4, 8], z5, Some(2)),
+        "M700MY" => row(9, 48000, [10, 11, 7, 7, 7], z, p2, true, Some([4, 5, 1, 1, 1]), Some(z), [0, 0, 2, 4, 8], z5, Some(2)),
         "M700Y" => row(
             10,
-            "M700Y",
             48000,
             [10, 11, 7, 7, 7],
             [10, 11, 7, 7, 7],
@@ -198,9 +211,7 @@ pub fn profile_by_name(name: &str) -> Option<Profile> {
             [0, 0, 2, 4, 8],
             Some(2),
         ),
-        "SUB100-48K" => {
-            row(11, "SUB100-48K", 48000, [7, 7, 3, 0, 0], [5, 3, 0, 0, 0], q1, false, None, None, [0, 0, 4, 0, 0], [0, 4, 0, 0, 0], None)
-        }
+        "SUB100-48K" => row(11, 48000, [7, 7, 3, 0, 0], [5, 3, 0, 0, 0], q1, false, None, None, [0, 0, 4, 0, 0], [0, 4, 0, 0, 0], None),
         _ => return None,
     })
 }

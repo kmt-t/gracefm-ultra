@@ -8,9 +8,9 @@ data/<profile>/post/<out>/ に書く。窓 WIN フレームを WIN/2 ずつず�
 - `sd` (S,T,128) f16: その事後標準偏差 (量子化の雑音を含む)
 - `truth` (T,128) f32: 原音の係数、`status` (S,T) u8: フレームの状態、`scen` (S,4) f32
 
-  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend --split train --out train
-  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend --split val --out val
-  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend_awgn --split val --out awgn_val
+  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200-L.pt --src mend --split train --out train
+  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200-L.pt --src mend --split val --out val
+  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200-L.pt --src mend_awgn --split val --out awgn_val
 """
 import argparse
 import glob
@@ -58,7 +58,7 @@ def restore(win, sc, net, meta, chunk=64):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", default="B200")
+    ap.add_argument("--profile", default="B200-L")
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data"))
     ap.add_argument("--ckpt", required=True, help="確定した MendNet のチェックポイント")
     ap.add_argument("--src", default="mend")

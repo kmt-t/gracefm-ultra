@@ -1,6 +1,6 @@
 //! 送信と受信の対称性: ノイズなしなら、Decoder(Encoder(x)) の係数を合成すると、原音を量子化誤差の範囲で再現する。欠落は Lost で報告される。
 
-use gfm_core::codec::synthesize;
+use gfm_core::codec::synthesize_stream;
 use gfm_core::decoder::{DecodedFrame, Decoder, Status};
 use gfm_core::encoder::Encoder;
 use gfm_core::profiles::profile_by_name;
@@ -35,15 +35,29 @@ fn frames_of(p: &gfm_core::profiles::Profile, x: &[[f64; 2]]) -> Vec<Option<Vec<
 #[test]
 fn decoder_inverts_encoder() {
     // 各プロファイルの量子化だけの SNR の下限（dB、実測より 2 dB 下）。S を送らないプロファイルは、ステレオの原音との SNR が低くなる
-    for (name, min_snr) in
-        [("B200", 47.5), ("M700", 38.0), ("SUB100", 12.5), ("SUB100-48K", 10.5), ("B200M", 1.5), ("M700M", 1.5), ("SUB50M", 1.0)]
-    {
+    for (name, min_snr) in [
+        ("B200", 47.5),
+        ("M700", 38.0),
+        ("SUB100", 12.5),
+        ("SUB100-48K", 10.5),
+        ("B200M", 1.5),
+        ("M700M", 1.5),
+        ("SUB50M", 1.0),
+        ("B200-L", 47.5),
+        ("M700-L", 38.0),
+        ("SUB100-L", 12.5),
+        ("SUB100-48K-L", 10.5),
+        ("B200M-L", 1.5),
+        ("M700M-L", 1.5),
+        ("SUB50M-L", 1.0),
+    ] {
         let p = profile_by_name(name).unwrap();
         let x = signal(64 * 60, 7);
         let frames = frames_of(&p, &x);
         let (out, _) = decode(&p, &frames);
         assert!(out.iter().all(|d| d.status == Status::Ok), "{}: 正常でないフレームが出た", name);
-        let pcm: Vec<[f64; 2]> = out.iter().flat_map(|d| synthesize(&d.coef)).collect();
+        let coefs: Vec<_> = out.iter().map(|d| d.coef.clone()).collect();
+        let pcm = synthesize_stream(&coefs, &p);
         let (mut sig, mut err) = (0f64, 0f64);
         for (o, r) in pcm.iter().zip(&x).skip(128) {
             for c in 0..2 {
@@ -59,7 +73,7 @@ fn decoder_inverts_encoder() {
 
 #[test]
 fn lost_frame_is_reported() {
-    let p = profile_by_name("B200").unwrap();
+    let p = profile_by_name("B200-L").unwrap();
     let x = signal(64 * 10, 3);
     let mut frames = frames_of(&p, &x);
     frames[4] = None;

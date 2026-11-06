@@ -10,14 +10,14 @@ use gfm_core::profiles::profile_by_name;
 
 #[test]
 fn hint_of_a_failed_frame_correlates_with_the_true_mantissa() {
-    let p = profile_by_name("B200").unwrap();
+    let p = profile_by_name("B200-L").unwrap();
     let dec = Decoder::new(&p).unwrap();
     let mut enc = Encoder::new(&p).unwrap();
     let mut noise = Gauss::new(7);
-    let pcm = common::stereo(64 * 400, 3);
+    let frames = gfm_core::codec::analyze_stream(&common::stereo(64 * 400, 3), &p);
     let (mut dot, mut norm, mut failed) = (0.0, 0.0, 0);
-    for i in 0..400 {
-        let (bd, _, sym) = enc.frame_parts(&pcm[i * 64..(i + 1) * 64]);
+    for bands in &frames {
+        let (bd, _, sym) = enc.frame_parts(bands);
         let rx = awgn_adc(&sym, 5.0, &mut noise);
         let (d, _) = dec.decode_frame(Some(&rx), &UnpackOptions { list: 1, ..UnpackOptions::default() });
         assert_eq!(d.hint.is_some(), d.status == Status::CrcFail, "手がかりは基本 CRC が通らないフレームだけ");
