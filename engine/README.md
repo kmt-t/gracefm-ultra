@@ -1,6 +1,6 @@
 # engine
 
-GraceFM-Ultra の Rust 実装。ビット列・フレーム形式は [GraceFM](../../gracefm) と同じで、音声の符号化と受信は浮動小数点で書く。
+GraceFM-Ultra の Rust 実装。ビット列・フレーム形式は [GraceFM](https://github.com/kmt-t/gracefm) と同じで、音声の符号化と受信は浮動小数点で書く。
 受信は、復号 → MendNet → 判定 → PostNet をフレームごとに流す（`../docs/DESIGN.md`）。網は ONNX Runtime で動かす。
 
 | crate | 内容 |
@@ -28,7 +28,7 @@ ONNX Runtime は、リポジトリの `.venv` の onnxruntime（pip）に入っ�
 ```
 export ORT_DYLIB_PATH=$(ls ../.venv/lib/python3.*/site-packages/onnxruntime/capi/libonnxruntime.so.*)
 gfm-tx --profile B200-L --pcm clip.raw --scen 20,0,0.05,3 --seed 1 --out a.sym      # 送信 + 通信路
-taskset -c 0,1,5,6,7,11 gfm-rx --profile B200-L --frames a.sym --out out.raw   # 受信（--models の既定は models/<プロファイル>）
+gfm-rx --profile B200-L --frames a.sym --out out.raw   # 受信（--models の既定は models/<プロファイル>）
 gfm-gen --profile B200-L --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 --out data.npz   # 学習データ
 ```
 
@@ -36,10 +36,10 @@ gfm-gen --profile B200-L --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1
 - `--scen e0,fade,rate,burst`: 基準 Es/N0 [dB]、Rayleigh か (0/1)、フレーム欠落率、平均バースト長 [フレーム]
 - `a.sym`: u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個の到着フラグ (u8), 届いたフレームの I/Q (f32、±1 = 1.0)
 - `out.raw`: L/R の交互の f32（満点 ±1）、フレーム数 × 64 サンプル。時刻は送信と揃っている（受信機の遅延は、出力の時刻ではなく、処理の待ち）
-- `gfm-rx` は標準エラー出力に、フレームの統計、超解像をかけた割合（`post_on`）と切り替えの回数、実時間比（`rtf`）、推論の処理時間（初期化を含む最初の 1 回 `first`、残りの `median`、`p99`、`worst`）、遅延（`latency` = 補間の確定待ち 150 ms + `worst`）、最大の常駐メモリを書く
+- `gfm-rx` は標準エラー出力に、フレームの統計、超解像をかけた割合（`post_on`）と切り替えの回数、実時間比（`rtf`）、推論の処理時間（初期化を含む最初の 1 回 `first`、残りの `median`、`p99`、`worst`）、遅延（`latency` = 補間の確定待ちと合成の 152 ms + `worst`）、最大の常駐メモリを書く
 
 ## 対応範囲
 
-- 送信: B200、B200M、M700、M700M、SUB100、SUB50M、SUB100-48K と、それぞれの `-L`（LeGall 5/3）。本家と同じく、pid とビット配置が同じで format_id で区別する
-- 受信: B200、B200-L（MendNet と PostNet を学習するプロファイル）、1 系統
-- 未対応: Y 方式（`*Y`）、暗号化、RTL-SDR の I/Q からの同期（等化器とタイミング同期）
+- プロファイル: B200、B200M、B200Y、B200MY、M700、M700M、M700Y、M700MY、SUB100、SUB50M、SUB100-48K と、それぞれの `-L`（LeGall 5/3）の全 22。本家と同じく、Haar と `-L` は pid とビット配置が同じで format_id で区別する
+- 受信は 1 系統。モデルが要る（`models/<プロファイル>/`）。リポジトリに入っているのは B200 と B200-L
+- 未対応: 暗号化、RTL-SDR の I/Q からの同期（等化器とタイミング同期）
