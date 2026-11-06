@@ -14,7 +14,7 @@
 
 検証: 同じ入力で PyTorch と ONNX Runtime の出力を比べ、PostNet は逐次処理が全体を一度に通したもの (tools/eval_post.py の process) と一致することも確かめる。
 
-  .venv/bin/python tools/export_onnx.py --mend runs/mendbits_B200_v9.pt --post runs/post_B200.pt --out engine/models/B200
+  .venv/bin/python tools/export_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt --out engine/models/B200
 """
 import argparse
 import glob

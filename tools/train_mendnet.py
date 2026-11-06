@@ -4,7 +4,7 @@ MendNet の学習。復号した係数・状態・hint と受信 LLR から、�
 損失は mendnet.bits_loss (ビットの BCE + 刻みの Huber + 係数の相対誤差)。使えるフレームと使えないフレームを別々に平均する。
 data/<profile>/mend/{train,val} (gen_mend.py) を使う。
 
-  .venv/bin/python tools/train_mendbits.py --profile B200 --minutes 30 --out runs/mendbits_B200.pt
+  .venv/bin/python tools/train_mendnet.py --profile B200 --minutes 30 --out runs/mendnet_B200.pt
 """
 import argparse
 import glob

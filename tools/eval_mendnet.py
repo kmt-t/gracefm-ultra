@@ -9,8 +9,8 @@ MendNet の評価。MendNet の係数は、出力の LLR から作る仮数の�
   指標は SNR (全体)、PSNR (満点 ±1、区間ごとの平均)、ViSQOL (audio モード、48 kHz に変換、区間ごとの平均) を Es/N0 ごとに。
   C/N0 [dB-Hz] は Es/N0 + 50 (B200 の換算)。
 
-  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendbits_B200_v9.pt
-  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendbits_B200_v9.pt --awgn
+  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendnet_B200.pt
+  .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendnet_B200.pt --awgn
 """
 import argparse
 import glob

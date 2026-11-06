@@ -4,7 +4,7 @@ Rust の受信 (engine/gfm-rx: Decoder → MendNet → 判定 → PostNet、ONNX
 同じ seed・シナリオの gfm-tx (シンボル) と gfm-gen --mend (MendNet の入力) は同じ通信路の実現になるので、両方の出力を比べる。
 基準: 両者の差が、原音に対して -60 dB 未満 (Rust は逐次処理で、後段の先読みに補間の暫定値を使うぶん、わずかに違う)。
 
-  .venv/bin/python tools/test_rx_onnx.py --mend runs/mendbits_B200_v9.pt --post runs/post_B200.pt
+  .venv/bin/python tools/test_rx_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt
 """
 import argparse
 import os

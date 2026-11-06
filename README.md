@@ -31,18 +31,18 @@
 
 - `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
 - `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）。`engine/models/B200/` に受信が使う ONNX
-- `tools/`: 音源の収集（`collect_audio.py`）、データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendbits.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_post.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）
+- `tools/`: 音源の収集（`collect_audio.py`）、データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendnet.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_post.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）
 - `runs/`: 学習・評価のスクリプトとログ（git 管理外）
 
 ## 学習から受信まで
 
 ```
 .venv/bin/python tools/gen_mend.py --profile B200 --split train --sub mend          # MendNet の学習データ（gfm-gen）
-.venv/bin/python tools/train_mendbits.py --profile B200 --out runs/mendbits_B200.pt    # MendNet
-.venv/bin/python tools/gen_post.py --ckpt runs/mendbits_B200_v9.pt --src mend --split train --out train   # PostNet の学習データ
+.venv/bin/python tools/train_mendnet.py --profile B200 --out runs/mendnet_B200.pt    # MendNet
+.venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend --split train --out train   # PostNet の学習データ
 .venv/bin/python tools/train_post.py --profile B200 --out runs/post_B200.pt           # PostNet
-.venv/bin/python tools/export_onnx.py --mend runs/mendbits_B200_v9.pt --post runs/post_B200.pt --out engine/models/B200
-.venv/bin/python tools/test_rx_onnx.py --mend runs/mendbits_B200_v9.pt --post runs/post_B200.pt   # Rust の受信と Python の一致
+.venv/bin/python tools/export_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt --out engine/models/B200
+.venv/bin/python tools/test_rx_onnx.py --mend runs/mendnet_B200.pt --post runs/post_B200.pt   # Rust の受信と Python の一致
 ```
 
 ## 設計

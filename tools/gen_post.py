@@ -8,9 +8,9 @@ data/<profile>/post/<out>/ に書く。窓 WIN フレームを WIN/2 ずつず�
 - `sd` (S,T,128) f16: その事後標準偏差 (量子化の雑音を含む)
 - `truth` (T,128) f32: 原音の係数、`status` (S,T) u8: フレームの状態、`scen` (S,4) f32
 
-  .venv/bin/python tools/gen_post.py --ckpt runs/mendbits_B200_v9.pt --src mend --split train --out train
-  .venv/bin/python tools/gen_post.py --ckpt runs/mendbits_B200_v9.pt --src mend --split val --out val
-  .venv/bin/python tools/gen_post.py --ckpt runs/mendbits_B200_v9.pt --src mend_awgn --split val --out awgn_val
+  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend --split train --out train
+  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend --split val --out val
+  .venv/bin/python tools/gen_post.py --ckpt runs/mendnet_B200.pt --src mend_awgn --split val --out awgn_val
 """
 import argparse
 import glob
