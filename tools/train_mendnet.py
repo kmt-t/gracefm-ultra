@@ -41,7 +41,7 @@ def main():
     ap.add_argument("--resume", default="", help="このチェックポイントの重みから始める")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
-    out = a.out or os.path.join(HERE, "..", "runs", f"mendbits_{a.profile}.pt")
+    out = a.out or os.path.join(HERE, "..", "runs", f"mendnet_{a.profile}.pt")
     pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
