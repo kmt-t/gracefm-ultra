@@ -47,7 +47,7 @@ impl Observation {
             Status::CrcFail => 2,
             Status::Lost => 3,
         };
-        let mut llr = vec![0i8; lay.n_coef_bits()];
+        let mut llr = vec![0i8; lay.n_obs_bits()];
         for (q, &l) in llr.iter_mut().zip(&d.llr) {
             *q = (l * LLR_SCALE).round().clamp(-127.0, 127.0) as i8;
         }
@@ -155,13 +155,13 @@ pub struct Mender<M: MendModel> {
 
 impl<M: MendModel> Mender<M> {
     pub fn new(lay: &Layout, model: M) -> Mender<M> {
-        let bits = [0, 1].map(|ch| (0..lay.coef_flat.len()).filter(|&j| lay.coef_flat[j] / NC == ch).collect::<Vec<_>>());
+        let bits = [0, 1].map(|ch| (0..lay.obs_full.len()).filter(|&j| lay.obs_full[j] / NC == ch).collect::<Vec<_>>());
         let nb = bits[0].len().max(bits[1].len());
         Mender {
             model,
             bits,
             nb,
-            nbit: lay.n_coef_bits(),
+            nbit: lay.n_obs_bits(),
             nbands: lay.p.nbands(),
             buf: VecDeque::with_capacity(WIN),
             received: 0,

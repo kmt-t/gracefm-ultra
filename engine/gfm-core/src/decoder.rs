@@ -1,13 +1,14 @@
-//! 受信: フレームのシンボル → 帯域係数と、その確からしさ（浮動小数点）。GraceFM `gracefm/decoder.py` に相当（Y 方式と暗号化は未対応）。
+//! 受信: フレームのシンボル → 帯域係数と、その確からしさ（浮動小数点）。GraceFM `gracefm/decoder.py` に相当（暗号化は未対応）。
 //! decode_frame = demodulate → descramble → unpack（ヘッダは事前知識つき、通らなければリスト復号）→ soft_coeffs（軟判定の逆量子化）。エンコーダ（encoder.rs）の鏡。
 //! 音声への合成と、欠落・誤りの補正は下流（receiver.rs）。信号の尺度は満点 ±1。
 
 use crate::codec::exp_range;
-use crate::codec::quant::{qmax_of, qmin_of};
+use crate::codec::quant::{offset_of, qmax_of, qmin_of};
 use crate::codec::BlockData;
+use crate::fec;
 use crate::framing::{unpack, UnpackOptions};
 use crate::layout::Layout;
-use crate::modem::{Modem, N_PREAMBLE};
+use crate::modem::{prbs, y_estimate, y_level, y_level_llr, y_phase_llr, Modem, N_PREAMBLE};
 use crate::prior::Tracker;
 use crate::profiles::{Profile, MAX_BANDS};
 use crate::scrambler::Scrambler;
@@ -52,7 +53,7 @@ pub struct DecodedFrame {
     pub coef: Vec<Vec<Vec<f64>>>,
     /// 誤差分散。情報なし（届かない・基本 CRC 不一致・高域欠落の高域）は INFINITY
     pub var: BandVar,
-    /// 仮数ビットの受信 LLR（自然対数、正 = 0 らしい。スクランブル解除後、FEC 前）。並びは Layout の coef_stream_idx。届かないフレームは空
+    /// 観測のビットの受信 LLR（自然対数、正 = 0 らしい。スクランブル解除後、FEC 前）。並びは Layout の obs_pos。届かないフレームは空
     pub llr: Vec<f64>,
     /// ヘッダのフレーム番号と、BlockData（基本 CRC が通ったとき）
     pub header: Option<(u64, BlockData)>,
@@ -62,7 +63,7 @@ pub struct DecodedFrame {
     pub hint: Option<Hint>,
 }
 
-/// BlockData（指数とアテネーション）から、係数ごとの量子化の刻み（満点 = 2^22 の尺度）を out（Layout の coef_offset の並び）に書く。
+/// BlockData（指数とアテネーション）から、係数ごとの量子化の刻み（満点 = 2^22 の尺度）を out（成分ごとに全帯域を並べた 2 × ブロック長の並び）に書く。
 /// 指数やアテネーションがない帯域は 0 のまま。high_ok が false のときは、高域（high_k 以上の帯域）のヘッダは信用できないので 0 のまま
 pub fn block_steps(lay: &Layout, bd: &BlockData, high_ok: bool, out: &mut [f32]) {
     let p = &lay.p;
@@ -72,7 +73,7 @@ pub fn block_steps(lay: &Layout, bd: &BlockData, high_ok: bool, out: &mut [f32])
         }
         let (Some(e), Some(attn)) = (bd.eidx[ch][k], bd.attn[ch][k].as_ref()) else { continue };
         let e = e + exp_range(p.bits(ch)[k], p).0;
-        let o = lay.coef_offset[&(ch, k)];
+        let o = ch * p.block + (0..k).map(|i| p.ncoef(i)).sum::<usize>();
         for j in 0..p.ncoef(k) {
             out[o + j] = (2f64.powi((e - p.attn_at(ch, k, attn, j)) as i32) * (1u64 << 22) as f64) as f32;
         }
@@ -81,8 +82,8 @@ pub fn block_steps(lay: &Layout, bd: &BlockData, high_ok: bool, out: &mut [f32])
 
 /// 軟判定の逆量子化。p1: 仮数の各ビットが 1 である確率（coef_items の並び）。
 /// 期待値は 仮数 + Σ (p1 − 硬判定ビット)·2^pos、誤差分散は (Σ p1(1−p1)·4^pos + 1/12)·刻み²。
-/// high_ok が false のときは、高域（high_k 以上の帯域）を 0（情報なし）にする。返り値: (帯域係数 [ch][k][j]、帯域ごとの誤差分散（係数の平均）)
-pub fn soft_coeffs(lay: &Layout, bd: &BlockData, p1: &[f64], high_ok: bool) -> (Vec<Vec<Vec<f64>>>, BandVar) {
+/// y: Y 帯域の係数ごとの（半径の段の推定値、その誤差分散）。high_ok が false のときは、高域（high_k 以上の帯域）を 0（情報なし）にする。返り値: (帯域係数 [ch][k][j]、帯域ごとの誤差分散（係数の平均）)
+pub fn soft_coeffs(lay: &Layout, bd: &BlockData, p1: &[f64], y: &[(f64, f64)], high_ok: bool) -> (Vec<Vec<Vec<f64>>>, BandVar) {
     let p = &lay.p;
     let nb = p.nbands();
     let mut du = vec![0f64; lay.n_coef];
@@ -92,6 +93,10 @@ pub fn soft_coeffs(lay: &Layout, bd: &BlockData, p1: &[f64], high_ok: bool) -> (
         let w = (1u64 << lay.coef_pos[j]) as f64;
         du[cf] += (p1[j] - hard) * w;
         var[cf] += p1[j] * (1.0 - p1[j]) * w * w;
+    }
+    for (&cf, &(d, v)) in lay.y_flat.iter().zip(y) {
+        du[cf] = d;
+        var[cf] = v;
     }
     let mut coef = vec![vec![Vec::new(); nb]; 2];
     let mut var_b = [[f64::INFINITY; MAX_BANDS]; 2];
@@ -104,7 +109,7 @@ pub fn soft_coeffs(lay: &Layout, bd: &BlockData, p1: &[f64], high_ok: bool) -> (
                 continue;
             }
             let o = lay.coef_offset[&(ch, k)];
-            let (qmax, qmin) = (qmax_of(b) as f64, qmin_of(b) as f64);
+            let (qmax, qmin) = (qmax_of(b) as f64, qmin_of(b, p, ch, k) as f64);
             let mant = bd.mant[ch][k].as_ref().unwrap();
             let attn = bd.attn[ch][k].as_ref().unwrap();
             let e = bd.eidx[ch][k].unwrap() + exp_range(b, p).0; // 刻みの指数（満点 = 1.0）
@@ -131,6 +136,7 @@ pub struct Decoder {
     modem: Modem,
     scrambler: Scrambler,
     digital_nsym: usize,
+    y_mask: Vec<u8>,
     tracker: Tracker,
     pub stats: Stats,
 }
@@ -140,8 +146,10 @@ impl Decoder {
         let lay = Layout::new(p)?;
         let modem = Modem::new(p.qam16h, p.alpha);
         let digital_nsym = modem.n_symbols(lay.n_tx, lay.n_strong);
-        let scrambler = Scrambler::new(digital_nsym * modem.bits_per_symbol());
-        Ok(Decoder { p: p.clone(), lay, modem, scrambler, digital_nsym, tracker: Tracker::new(), stats: Stats::default() })
+        let digital_bits = digital_nsym * modem.bits_per_symbol();
+        let scrambler = Scrambler::new(digital_bits);
+        let y_mask = prbs(digital_bits + 3 * lay.y_items.len()).split_off(digital_bits);
+        Ok(Decoder { p: p.clone(), lay, modem, scrambler, digital_nsym, y_mask, tracker: Tracker::new(), stats: Stats::default() })
     }
 
     fn missing(&self, status: Status, llr: Vec<f64>) -> DecodedFrame {
@@ -149,15 +157,15 @@ impl Decoder {
         DecodedFrame { status, coef, var: [[f64::INFINITY; MAX_BANDS]; 2], llr, header: None, gap: 0.0, hint: None }
     }
 
-    /// 仮数ビットの受信 LLR（coef_stream_idx の並び）から、尺度なしの手がかりを作る
+    /// 観測のビットの受信 LLR（obs_pos の並び）から、尺度なしの手がかりを作る
     fn hint(&self, llr: &[f64]) -> Hint {
         let lay = &self.lay;
         let p = &self.p;
         let mut eu = vec![0f64; lay.n_coef];
         let mut var = vec![0f64; lay.n_coef];
-        for (j, &cf) in lay.coef_flat.iter().enumerate() {
+        for (j, &cf) in lay.obs_flat.iter().enumerate() {
             let p1 = 1.0 / (1.0 + llr[j].clamp(-40.0, 40.0).exp());
-            let w = (1u64 << lay.coef_pos[j]) as f64;
+            let w = (1u64 << lay.obs_pos[j]) as f64;
             eu[cf] += p1 * w;
             var[cf] += p1 * (1.0 - p1) * w * w;
         }
@@ -168,9 +176,9 @@ impl Decoder {
                 let n = p.ncoef(k);
                 let b = p.bits(ch)[k];
                 if b > 0 {
-                    let (o, qmax) = (lay.coef_offset[&(ch, k)], qmax_of(b) as f64);
+                    let (o, qmax, off) = (lay.coef_offset[&(ch, k)], qmax_of(b) as f64, offset_of(b, p, ch, k) as f64);
                     for j in 0..n {
-                        hint.h[ch][base + j] = (eu[o + j] - qmax) / qmax;
+                        hint.h[ch][base + j] = (eu[o + j] - off) / qmax;
                         hint.q[ch][k] += var[o + j].sqrt() / qmax;
                     }
                     hint.q[ch][k] = (hint.q[ch][k] / n as f64).clamp(0.0, 1.0);
@@ -184,18 +192,25 @@ impl Decoder {
     /// 1 フレームの受信シンボル（プリアンブル込み、±1 = 1.0。届かなければ None）→ 復号結果。返り値の 2 つ目は、採用したヘッダの候補の順位（最尤が CRC を通らなかったとき > 0）。
     /// opt: ヘッダの事前の軟値（`Tracker::header_prior`）と、リスト復号の設定
     pub fn decode_frame(&self, sym: Option<&[[f64; 2]]>, opt: &UnpackOptions) -> (DecodedFrame, usize) {
-        let expected = N_PREAMBLE + self.digital_nsym;
+        let y_start = N_PREAMBLE + self.digital_nsym;
+        let expected = y_start + self.lay.y_items.len();
         let sym = match sym {
             Some(s) if s.len() == expected => s,
             _ => return (self.missing(Status::Lost, Vec::new()), 0),
         };
-        let (mut llr, mut hard, _var) = self.modem.demodulate(&sym[N_PREAMBLE..expected], self.lay.n_tx);
+        let (mut llr, mut hard, var) = self.modem.demodulate(&sym[N_PREAMBLE..y_start], self.lay.n_tx);
+        let y_sym = &sym[y_start..];
+        let (y_msb_llr, y_par_llr) = y_phase_llr(y_sym, &self.y_mask, var);
         self.scrambler.descramble(&mut llr, &mut hard);
         let lay = &self.lay;
-        let mant: Vec<f64> = lay.coef_stream_idx.iter().map(|&i| llr[i]).collect();
-        let u = match unpack(lay, &llr, &hard, opt) {
+        let mut mant: Vec<f64> = lay.coef_stream_idx.iter().map(|&i| llr[i]).collect();
+        let hard_bit = |l: &f64| (*l < 0.0) as u8;
+        let opt = UnpackOptions { y_soft: Some((&y_msb_llr, &y_par_llr)), ..*opt };
+        let u = match unpack(lay, &llr, &hard, &opt) {
             Some(r) => r,
             None => {
+                let (msb, par): (Vec<u8>, Vec<u8>) = (y_msb_llr.iter().map(hard_bit).collect(), y_par_llr.iter().map(hard_bit).collect());
+                self.push_y_llr(&mut mant, y_sym, &msb, &par, &y_msb_llr, var);
                 let hint = self.hint(&mant);
                 let mut d = self.missing(Status::CrcFail, mant);
                 d.hint = Some(hint);
@@ -208,8 +223,27 @@ impl Decoder {
             p1[ci] = u.top_bits[t] as f64; // FEC で訂正した保護ビットは確定値
         }
         let status = if u.high_ok { Status::Ok } else { Status::HighFail };
-        let (coef, var) = soft_coeffs(lay, &u.bd, &p1, u.high_ok);
+        let parity = if u.y_msb.is_empty() { Vec::new() } else { fec::rsc_parity(&u.y_msb).0[..u.y_msb.len()].to_vec() };
+        self.push_y_llr(&mut mant, y_sym, &u.y_msb, &parity, &y_msb_llr, var);
+        let y: Vec<(f64, f64)> = y_sym
+            .iter()
+            .enumerate()
+            .map(|(t, s)| {
+                let (obs, noise) = y_level(s, u.y_msb[t], parity[t], &self.y_mask[3 * t..3 * t + 3], var);
+                y_estimate(obs, noise)
+            })
+            .collect();
+        let (coef, var) = soft_coeffs(lay, &u.bd, &p1, &y, u.high_ok);
         (DecodedFrame { status, coef, var, llr: mant, header: Some((u.counter, u.bd)), gap: u.gap, hint: None }, u.rank)
+    }
+
+    /// 観測の LLR に、Y の係数ごとの全ビットを足す: 最上位ビットは位相、残りは半径の段から
+    fn push_y_llr(&self, out: &mut Vec<f64>, sym: &[[f64; 2]], msb: &[u8], parity: &[u8], msb_llr: &[f64], var: f64) {
+        for (t, s) in sym.iter().enumerate() {
+            let (obs, noise) = y_level(s, msb[t], parity[t], &self.y_mask[3 * t..3 * t + 3], var);
+            out.push(msb_llr[t]);
+            out.extend(y_level_llr(obs, noise));
+        }
     }
 
     /// 次のフレームを復号する。ヘッダの事前知識は、直前までに復号したヘッダから作る

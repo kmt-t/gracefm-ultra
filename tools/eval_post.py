@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.postnet import FRAME, M, PostNet, Transform, gate, mdct_gate  # noqa: E402
-from eval_mendnet import CN_OFFSET, visqol  # noqa: E402
+from eval_mendnet import cn_offset, visqol  # noqa: E402
 
 
 def load(path, dev):
@@ -58,15 +58,16 @@ def wave_of(coef, tf):
     return tf.wave(c).numpy()
 
 
-BANDS = [(0, 2000), (2000, 4000), (4000, 8000), (8000, 12000), (12000, 16000)]   # [Hz]
+BANDS = [(0, 2000), (2000, 4000), (4000, 8000), (8000, 12000), (12000, 16000), (16000, 24000)]   # [Hz]
 LSD_FLOOR = 1e-10                                                                   # 対数スペクトル距離のパワーの下限 (ビン 1 個あたり)
 
 
-def eval_bands(files, net, tf, dev):
+def eval_bands(files, net, tf, dev, fs):
     """帯域ごとに、SNR、出力と原音のエネルギーの比、対数スペクトル距離 (MDCT のビン×フレームの RMS) を、M と S の合計で"""
     methods = ["MendNet", "PostNet"]
-    hz = (np.arange(M) + 0.5) * 16000 / M
-    acc = {(b, k): [0.0, 0.0, 0.0, 0.0, 0] for b in BANDS for k in methods}   # 原音、誤差、出力、LSD の二乗和、数
+    hz = (np.arange(M) + 0.5) * (fs / 2) / M
+    bands = [b for b in BANDS if b[0] < fs / 2]
+    acc = {(b, k): [0.0, 0.0, 0.0, 0.0, 0] for b in bands for k in methods}   # 原音、誤差、出力、LSD の二乗和、数
     n_on = n_all = 0
     tfc = Transform(tf.kind)
     for f in files:
@@ -80,7 +81,7 @@ def eval_bands(files, net, tf, dev):
                 continue
             for k in methods:
                 Y = tfc.mdct(torch.from_numpy(out[k])).numpy()
-                for b in BANDS:
+                for b in bands:
                     sel = (hz >= b[0]) & (hz < b[1])
                     r, y = R[:, sel][:, :, on], Y[:, sel][:, :, on]
                     d = 10 * np.log10((y ** 2 + LSD_FLOOR) / (r ** 2 + LSD_FLOOR))
@@ -93,7 +94,9 @@ def eval_bands(files, net, tf, dev):
         print(f"  {os.path.basename(f)}", flush=True)
     print(f"判定がオンのフレーム {n_on / n_all:.1%}")
     print("帯域 [kHz]    SNR [dB] / エネルギー比 [dB] / 対数スペクトル距離 [dB]")
-    for b in BANDS:
+    for b in bands:
+        if acc[(b, methods[0])][0] == 0:                                      # 送らない帯域
+            continue
         cols = []
         for k in methods:
             s = acc[(b, k)]
@@ -106,7 +109,7 @@ def lr(w):
     return np.stack([w[0] + w[1], w[0] - w[1]], 1)
 
 
-def eval_awgn(files, src, net, tf, dev, esn0=None):
+def eval_awgn(files, src, net, tf, dev, p, esn0=None):
     methods = ["復号のまま", "MendNet", "PostNet"]
     acc, on = {}, {}
     tfc = Transform(tf.kind)
@@ -129,14 +132,14 @@ def eval_awgn(files, src, net, tf, dev, esn0=None):
                     s[0] += float((ref ** 2).sum())
                     s[1] += e
                     s[3].append(10 * np.log10(ref.size / max(e, 1e-20)))
-                    jobs.append((ref, y))
+                    jobs.append((ref, y, p.fs))
                     keys.append((float(e0), k))
             for (e0, k), mos in zip(keys, pool.map(visqol, jobs)):
                 acc[e0][k][2].append(mos)
             print(f"[{si + 1}/{len(files)}] {os.path.basename(f)}", flush=True)
     print("\nSNR [dB] (全体)、PSNR [dB] (区間の平均)、ViSQOL (区間の平均)")
     for e0, d in sorted(acc.items()):
-        print(f"\nEs/N0 {e0:g} dB (C/N0 {e0 + CN_OFFSET:g} dB-Hz)、区間 {len(d[methods[0]][2])}、判定がオン {np.mean(on[e0]):.0%}")
+        print(f"\nEs/N0 {e0:g} dB (C/N0 {e0 + cn_offset(p):.1f} dB-Hz)、区間 {len(d[methods[0]][2])}、判定がオン {np.mean(on[e0]):.0%}")
         for k in methods:
             s = d[k]
             print(f"  {k:10s} SNR {10 * np.log10(s[0] / s[1]):+6.2f}  PSNR {np.mean(s[3]):6.2f}  ViSQOL {np.mean(s[2]):.3f}")
@@ -161,10 +164,10 @@ def main():
     pick = lambda sub: [f for f in sorted(glob.glob(os.path.join(d, "post", sub, "*.npz")))  # noqa: E731
                         if not keys or any(k in os.path.basename(f) for k in keys)]
     if a.awgn:
-        eval_awgn(pick("awgn_val"), os.path.join(d, "mend_awgn", "val"), net, tf, dev,
+        eval_awgn(pick("awgn_val"), os.path.join(d, "mend_awgn", "val"), net, tf, dev, PROFILES[a.profile],
                   [float(x) for x in a.esn0.split(",") if x])
     else:
-        eval_bands(pick("val"), net, tf, dev)
+        eval_bands(pick("val"), net, tf, dev, PROFILES[a.profile].fs)
 
 
 if __name__ == "__main__":

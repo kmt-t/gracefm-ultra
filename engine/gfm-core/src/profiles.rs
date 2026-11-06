@@ -1,4 +1,4 @@
-//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。Y 方式と暗号化は未対応）。名前の末尾が `-L` なら LeGall 5/3、それ以外は Haar で、pid とビット配置は同じ。
+//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。暗号化は未対応）。名前の末尾が `-L` なら LeGall 5/3、それ以外は Haar で、pid とビット配置は同じ。
 
 /// 帯域数の上限（低域近似 1 + 詳細帯域 levels。登録プロファイルはすべて 5）
 pub const MAX_BANDS: usize = 5;
@@ -93,6 +93,10 @@ impl Profile {
         } else {
             self.base_s.unwrap()[k]
         }
+    }
+    /// 成分 ch の帯域 k の係数を、Y 方式の専用シンボルで送るか
+    pub fn y_band(&self, ch: usize, k: usize) -> bool {
+        self.y_start_k.is_some_and(|s| k >= s) && self.bits(ch)[k] > 0
     }
     pub fn protect_bits(&self, k: usize) -> usize {
         self.protect[k]

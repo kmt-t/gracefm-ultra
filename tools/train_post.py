@@ -28,7 +28,7 @@ F = 192                                   # MDCT のフレーム数
 CROP = (F + 1) * M // FRAME               # フレーム数
 SKIP = 96
 LEAD = SKIP * M // FRAME                  # 判定を問わない先頭のフレーム数 (文脈だけ。オフの所から入る切り替わり目も学ぶ)
-HIGH = 64                                 # 検証で別に見る高い帯域の下端のビン (4 kHz)
+HIGH_HZ = 4000                            # 検証で別に見る高い帯域の下端
 assert SKIP >= receptive_past()
 
 
@@ -38,6 +38,7 @@ class Crops:
 
     def __init__(self, files, power):
         self.e0, self.sd, self.truth, self.status, self.starts = [], [], [], [], []
+        self.comps = []
         for f in files:
             z = np.load(f)
             st = []
@@ -54,6 +55,9 @@ class Crops:
             self.truth.append(torch.from_numpy(z["truth"]))
             self.status.append(torch.from_numpy(z["status"]))
             self.starts.append(st)
+            self.comps = [ch for ch in (0, 1) if z["truth"][:, ch * 64:ch * 64 + 64].any()]   # 送っている成分
+        if not self.starts:
+            raise SystemExit("判定がオンの切り出しがありません。このプロファイルは閾値 (GATE_ON) に届いていません")
 
     def locate(self, bs, rng):
         """[(区間, シナリオ, 先頭フレーム, 成分), …]"""
@@ -61,7 +65,7 @@ class Crops:
         for _ in range(bs):
             si = int(rng.integers(len(self.e0)))
             sc, a = self.starts[si][int(rng.integers(len(self.starts[si])))]
-            out.append((si, int(sc), int(a[rng.integers(len(a))]), int(rng.integers(2))))
+            out.append((si, int(sc), int(a[rng.integers(len(a))]), int(rng.choice(self.comps))))
         return out
 
     def gather(self, locs, dev):
@@ -77,14 +81,14 @@ class Crops:
         return f(e0), f(sd), f(tr), torch.tensor([x[3] for x in locs], device=dev)
 
 
-def forward(net, tf, b):
-    """→ (損失 (N,), 二乗和 (推定の誤差、入力の誤差、原音) × (全帯域、HIGH 以上) (6,))。二乗和は先頭 SKIP フレームを除く"""
+def forward(net, tf, b, high):
+    """→ (損失 (N,), 二乗和 (推定の誤差、入力の誤差、原音) × (全帯域、ビン high 以上) (6,))。二乗和は先頭 SKIP フレームを除く"""
     e0, sd, truth, comp = b
     X, var, T = tf.mdct(tf.wave(e0, REACH)), tf.mdct_var(tf.wave_var(sd, REACH)), tf.mdct(tf.wave(truth, REACH))
     Y = net(X, var, comp)
     loss = post_loss(tf, Y, T, SKIP)
     sq = lambda v, a: (v[:, a:, SKIP:] ** 2).sum().item()  # noqa: E731
-    return loss, np.array([sq(v, a) for a in (0, HIGH) for v in (Y - T, X - T, T)])
+    return loss, np.array([sq(v, a) for a in (0, high) for v in (Y - T, X - T, T)])
 
 
 def main():
@@ -104,6 +108,7 @@ def main():
     rng = np.random.default_rng(0)
     d = os.path.join(a.data, a.profile, "post")
     tf = Transform(PROFILES[a.profile].transform).to(dev)
+    high = int(HIGH_HZ * 2 * M / PROFILES[a.profile].fs)
     tr = Crops(sorted(glob.glob(os.path.join(d, "train", "*.npz"))), tf.power)
     va = Crops(sorted(glob.glob(os.path.join(d, "val", "*.npz"))), tf.power)
     cfg = dict(ch=256)
@@ -121,7 +126,7 @@ def main():
         frac = (time.time() - t0) / total
         for g in opt.param_groups:
             g["lr"] = a.lr * (0.5 * (1 + np.cos(np.pi * frac)) * 0.97 + 0.03)
-        loss = forward(net, tf, tr.gather(tr.locate(a.bs, rng), dev))[0]
+        loss = forward(net, tf, tr.gather(tr.locate(a.bs, rng), dev), high)[0]
         opt.zero_grad()
         loss.mean().backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -131,7 +136,7 @@ def main():
         if step % 200 == 0:
             with torch.no_grad():
                 net.eval()
-                v = [forward(net, tf, b) for b in vb]
+                v = [forward(net, tf, b, high) for b in vb]
                 net.train()
             vl = np.mean([x[0].mean().item() for x in v])
             e, e_in, t2, he, he_in, ht2 = sum(x[1] for x in v)

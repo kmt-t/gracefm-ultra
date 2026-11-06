@@ -1,11 +1,12 @@
-//! 送信: PCM → フレームのシンボル（浮動小数点）。GraceFM `gracefm/encoder.py` に相当（Y 方式と暗号化は未対応）。
+//! 送信: PCM → フレームのシンボル（浮動小数点）。GraceFM `gracefm/encoder.py` に相当（暗号化は未対応）。
 //! analyze_stream → フレームごとに quantize → pack → scramble → modulate。デコーダ（decoder.rs）の鏡。
 //! ビット配置・FEC・CRC・スクランブルはビット処理なので、本家とビット単位で同じ。音声の変換と量子化だけが浮動小数点。
 
 use crate::codec::{analyze_stream, quantize, BlockData};
-use crate::framing::pack;
+use crate::fec;
+use crate::framing::{pack, y_msb, y_u};
 use crate::layout::Layout;
-use crate::modem::Modem;
+use crate::modem::{prbs, y_modulate, Modem};
 use crate::profiles::Profile;
 use crate::scrambler::Scrambler;
 
@@ -17,7 +18,9 @@ pub struct Encoder {
     pub lay: Layout,
     pub modem: Modem,
     pub scrambler: Scrambler,
+    /// デジタル変調のシンボル数（Y の専用シンボルはその後ろ）
     pub nsym: usize,
+    y_mask: Vec<u8>,
     frame_no: u64,
     clip_opt: bool,
 }
@@ -27,8 +30,10 @@ impl Encoder {
         let lay = Layout::new(p)?;
         let modem = Modem::new(p.qam16h, p.alpha);
         let nsym = modem.n_symbols(lay.n_tx, lay.n_strong);
-        let scrambler = Scrambler::new(nsym * modem.bits_per_symbol());
-        Ok(Encoder { p: p.clone(), lay, modem, scrambler, nsym, frame_no: 0, clip_opt: true })
+        let digital_bits = nsym * modem.bits_per_symbol();
+        let scrambler = Scrambler::new(digital_bits);
+        let y_mask = prbs(digital_bits + 3 * lay.y_items.len()).split_off(digital_bits);
+        Ok(Encoder { p: p.clone(), lay, modem, scrambler, nsym, y_mask, frame_no: 0, clip_opt: true })
     }
 
     /// 1 フレームの帯域係数のシンボル（プリアンブル込み）
@@ -44,7 +49,12 @@ impl Encoder {
         let mut buf = vec![0u8; self.nsym * self.modem.bits_per_symbol()];
         buf[..stream.len()].copy_from_slice(&stream);
         self.scrambler.scramble(&mut buf);
-        let sym = self.modem.modulate(&buf, self.nsym);
+        let mut sym = self.modem.modulate(&buf, self.nsym);
+        if !self.lay.y_items.is_empty() {
+            let u = y_u(&self.lay, &bd);
+            let msb = y_msb(&self.lay, &u);
+            sym.extend(y_modulate(&u, &fec::rsc_parity(&msb).0[..u.len()], &self.y_mask));
+        }
         (bd, stream, sym)
     }
 

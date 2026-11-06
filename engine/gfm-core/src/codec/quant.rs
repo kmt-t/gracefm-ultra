@@ -14,13 +14,17 @@ pub fn qmax_of(b: i64) -> i64 {
     (1 << (b - 1)) - 1
 }
 
-/// Y 帯域は未対応なので、負側は -qmax
-pub fn qmin_of(b: i64) -> i64 {
-    -qmax_of(b)
+/// Y 帯域だけ負側に 1 値多い 2 の補数の範囲を使い、全 2^b 点を使う
+pub fn qmin_of(b: i64, p: &Profile, ch: usize, k: usize) -> i64 {
+    if p.y_band(ch, k) {
+        -(1 << (b - 1))
+    } else {
+        -qmax_of(b)
+    }
 }
 
-pub fn offset_of(b: i64) -> i64 {
-    qmax_of(b)
+pub fn offset_of(b: i64, p: &Profile, ch: usize, k: usize) -> i64 {
+    -qmin_of(b, p, ch, k)
 }
 
 /// 仮数幅 b で固定する指数範囲 [emin, emax]
@@ -59,7 +63,7 @@ fn shared_exponent(peak: f64, qmax: i64, emin: i64, emax: i64) -> i64 {
 pub fn quantize_band(c: &[f64], ch: usize, k: usize, p: &Profile, clip_opt: bool) -> (Vec<i64>, i64, Vec<i64>) {
     let b = p.bits(ch)[k];
     let group = p.attenuator_group(ch, k);
-    let (qmax, qmin) = (qmax_of(b), qmin_of(b));
+    let (qmax, qmin) = (qmax_of(b), qmin_of(b, p, ch, k));
     let (emin, emax) = exp_range(b, p);
     let peak = c.iter().fold(0f64, |a, v| a.max(v.abs()));
     let e_floor = emin.max(1 - FRAC);

@@ -20,10 +20,20 @@ fn pack_unpack_round_trip() {
             let bd = encode_block(blk, &p, true);
             let stream = pack(&lay, &bd, 0, i as u64);
             assert_eq!(stream.len(), lay.n_tx);
-            let u = unpack(&lay, &soft_of(&stream, 20.0), &stream, &UnpackOptions::default())
-                .unwrap_or_else(|| panic!("{}: CRC が通らない", name));
+            let msb = y_msb(&lay, &y_u(&lay, &bd));
+            let (msb_soft, par_soft) = (soft_of(&msb, 20.0), soft_of(&gfm_core::fec::rsc_parity(&msb).0[..msb.len()], 20.0));
+            let opt = UnpackOptions { y_soft: Some((&msb_soft, &par_soft)), ..UnpackOptions::default() };
+            let u = unpack(&lay, &soft_of(&stream, 20.0), &stream, &opt).unwrap_or_else(|| panic!("{}: CRC が通らない", name));
             assert!(u.high_ok, "{}", name);
-            assert_eq!(u.bd.mant, bd.mant, "{}: 仮数", name);
+            assert_eq!(u.y_msb, msb, "{}: Y の最上位ビット", name);
+            // Y 帯域の半径の段は専用シンボルで送るので、ビット列には最上位ビットだけが載る
+            let mut want = bd.mant.clone();
+            for &(ch, k, j) in &lay.y_items {
+                let (b, off) = (p.bits(ch)[k], gfm_core::codec::offset_of(p.bits(ch)[k], &p, ch, k));
+                let m = &mut want[ch][k].as_mut().unwrap()[j];
+                *m = (((*m + off) >> (b - 1)) << (b - 1)) - off;
+            }
+            assert_eq!(u.bd.mant, want, "{}: 仮数", name);
             assert_eq!(u.bd.eidx, bd.eidx, "{}: 指数", name);
             assert_eq!(u.bd.attn, bd.attn, "{}: アッテネータ", name);
         }
@@ -84,7 +94,7 @@ fn coefficient_bits_reassemble_the_mantissa() {
     for &(ch, k) in &lay.coef_groups {
         let o = lay.coef_offset[&(ch, k)];
         let b = p.bits(ch)[k];
-        let m: Vec<i64> = u[o..o + p.ncoef(k)].iter().map(|v| v - gfm_core::codec::offset_of(b)).collect();
+        let m: Vec<i64> = u[o..o + p.ncoef(k)].iter().map(|v| v - gfm_core::codec::offset_of(b, &p, ch, k)).collect();
         assert_eq!(&m, bd.mant[ch][k].as_ref().unwrap());
     }
 }

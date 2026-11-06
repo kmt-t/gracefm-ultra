@@ -42,9 +42,17 @@ pub fn encode_block(x: &[[f64; 2]], p: &gfm_core::profiles::Profile, clip_opt: b
     gfm_core::codec::quantize(&gfm_core::codec::analyze_stream(x, p)[0], p, clip_opt)
 }
 
-/// 全プロファイル（Y 方式を除く）
+/// 全プロファイル
 #[allow(dead_code)]
-pub const PROFILES: [&str; 14] = [
+pub const PROFILES: [&str; 22] = [
+    "B200MY",
+    "B200Y",
+    "M700MY",
+    "M700Y",
+    "B200MY-L",
+    "B200Y-L",
+    "M700MY-L",
+    "M700Y-L",
     "B200",
     "B200M",
     "M700",

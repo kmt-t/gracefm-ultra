@@ -33,11 +33,16 @@ from gracefm_ultra.mendnet import Q22, WIN, MendNet, make_meta, run_both, soft_e
 from tools.common import wavio  # noqa: E402
 from mend_windows import Windows  # noqa: E402
 
-FS = 32000
 HOP = WIN // 2
-CN_OFFSET = 50.0
 BUCKETS = [("連続1", 1, 1), ("連続2-3", 2, 3), ("連続4-8", 4, 8), ("連続9-25", 9, 25), ("連続26以上", 26, 10**9)]
 METHODS = ["復号のまま", "MendNet"]
+
+
+def cn_offset(p):
+    """C/N0 [dB-Hz] − Es/N0 [dB]: シンボルレートの dB"""
+    from gracefm.encoder import Encoder
+    from gracefm.modem import N_PREAMBLE
+    return 10 * np.log10((N_PREAMBLE + Encoder(p).nsym) * p.fs / p.block)
 
 
 def load(path, dev):
@@ -116,14 +121,14 @@ _api = None
 
 
 def visqol(args):
-    """(原音, 出力) (N, 2) 32 kHz → ViSQOL (両チャンネルの平均)。ワーカーごとに API を作る"""
+    """(原音, 出力, 標本化周波数) (N, 2) → ViSQOL (両チャンネルの平均)。ワーカーごとに API を作る"""
     global _api
     if _api is None:
         from visqol import VisqolApi
         _api = VisqolApi()
         _api.create(mode="audio")
-    ref, y = args
-    return float(np.mean([_api.measure_from_arrays(wavio.resample(ref[:, c], FS, 48000), wavio.resample(y[:, c], FS, 48000), sample_rate=48000).moslqo
+    ref, y, fs = args
+    return float(np.mean([_api.measure_from_arrays(wavio.resample(ref[:, c], fs, 48000), wavio.resample(y[:, c], fs, 48000), sample_rate=48000).moslqo
                           for c in (0, 1)]))
 
 
@@ -150,7 +155,8 @@ def stream(va, si, sc, net, meta, chunk=32):
     return res, ref
 
 
-def eval_awgn(va, files, net, meta, kind):
+def eval_awgn(va, files, net, meta, p):
+    kind = p.transform
     methods = METHODS
     acc = {}
     with Pool(len(CPUS), initializer=pin) as pool:
@@ -166,14 +172,14 @@ def eval_awgn(va, files, net, meta, kind):
                     s[0] += float((ref ** 2).sum())
                     s[1] += e
                     s[3].append(10 * np.log10(ref.size / max(e, 1e-20)))
-                    jobs.append((ref, y))
+                    jobs.append((ref, y, p.fs))
                     keys.append((float(e0), k))
             for (e0, k), mos in zip(keys, pool.map(visqol, jobs)):
                 acc[e0][k][2].append(mos)
             print(f"[{si + 1}/{len(files)}] {os.path.basename(f)}", flush=True)
     print("\nSNR [dB] (全体)、PSNR [dB] (区間の平均)、ViSQOL (区間の平均)")
     for e0, d in sorted(acc.items()):
-        print(f"\nEs/N0 {e0:g} dB (C/N0 {e0 + CN_OFFSET:g} dB-Hz)、区間 {len(d[methods[0]][2])}")
+        print(f"\nEs/N0 {e0:g} dB (C/N0 {e0 + cn_offset(p):.1f} dB-Hz)、区間 {len(d[methods[0]][2])}")
         for k in methods:
             s = d[k]
             print(f"  {k:10s} SNR {10 * np.log10(s[0] / s[1]):+6.2f}  PSNR {np.mean(s[3]):6.2f}  ViSQOL {np.mean(s[2]):.3f}")
@@ -196,7 +202,7 @@ def main():
     meta = make_meta({k: z[k] for k in ("pos", "coef_of_bit")}, PROFILES[a.profile]).to(dev)
     net = load(a.ckpt, dev)
     if a.awgn:
-        eval_awgn(va, files, net, meta, PROFILES[a.profile].transform)
+        eval_awgn(va, files, net, meta, PROFILES[a.profile])
     else:
         eval_windows(va, net, meta, a.windows, PROFILES[a.profile].transform)
 

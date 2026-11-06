@@ -190,15 +190,13 @@ class Meta:
 def make_meta(npz, profile):
     """gfm-gen の出力 (npz の pos、coef_of_bit) とプロファイルから Meta を作る"""
     from gracefm.codec import offset_of, qmax_of, qmin_of
-    from gracefm.layout import Layout
-    lay = Layout(profile)
     offs, qmin, qmax = [], [], []
-    for (ch, k), o in lay.coef_offset.items():
-        bits = {"M": profile.bits_m, "S": profile.bits_s}[ch][k]
-        n = profile.ncoef(k)
-        offs += [offset_of(bits, profile, ch, k)] * n
-        qmin += [qmin_of(bits, profile, ch, k)] * n
-        qmax += [qmax_of(bits)] * n
+    for ch, table in (("M", profile.bits_m), ("S", profile.bits_s)):
+        for k, bits in enumerate(table):
+            n = profile.ncoef(k)
+            offs += [offset_of(bits, profile, ch, k) if bits else 0] * n     # 送らない帯域は常に 0
+            qmin += [qmin_of(bits, profile, ch, k) if bits else 0] * n
+            qmax += [qmax_of(bits) if bits else 0] * n
     return Meta(npz["pos"], npz["coef_of_bit"], offs, qmin, qmax)
 
 
@@ -208,4 +206,4 @@ def soft_e0(llr, step, meta):
     m = (p1 @ meta.W) - meta.offset
     m = torch.maximum(torch.minimum(m, meta.qmax), meta.qmin)
     v = (p1 * (1 - p1)) @ meta.W2 + 1.0 / 12
-    return m * step, v.sqrt() * step
+    return m * step, v.sqrt() * step * (meta.qmax > 0)                       # 送らない帯域は誤差もない

@@ -3,7 +3,7 @@
 //!
 //! 出力（`MendDataset::write` の .npz）は、シナリオ s、フレーム f、係数 nc（= 成分数 × 64。成分ごとに帯域 k = 0〜4 の係数を並べた順）、
 //! 成分数 ncomp、帯域数 nb について:
-//! - `truth` (f, nc) f32: 原音の帯域係数（満点 = 1.0）
+//! - `truth` (f, nc) f32: 原音の帯域係数（満点 = 1.0）。送らない帯域と成分は 0
 //! - `dec` (s, f, nc) f32: Decoder が復号した係数（補間の前。使えないフレームは 0）
 //! - `status` (s, f) u8: 0 = 正常、1 = 高域欠落（基本 CRC は通った）、2 = 壊れた（届いたが基本 CRC が通らない）、3 = 欠落
 //! - `var` (s, f, ncomp, nb) f32: 復号した係数の誤差分散（線形、満点 1.0 に対する二乗）。情報なしは -1
@@ -11,13 +11,14 @@
 //! - `hint_q` (s, f, ncomp, nb) f32: 手がかりの確からしさ（仮数の事後標準偏差 / qmax）。それ以外は 0
 //! - `gap` (s, f) f32: ヘッダ採用の、最尤との対数尤度の差 [nat]
 //! - `llr` (s, f, nbit) i8: 受信 LLR（自然対数の LLR の 4 倍、±127 に飽和。欠落フレームは 0）、`bits` (f, nbit) u8: 送信した仮数ビット、
-//!   `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）、`dstep` (s, f, nc) f32: Decoder が復号したヘッダの刻み（基本 CRC が通らない・欠落のフレームと、高域欠落のフレームの高域は 0）。ビットの属性: `pos`（仮数内の位置）、`coef_of_bit`（係数の番号）、`strong`（強い位置か）、`protected`（FEC で守る上位ビットか）、`group`（係数の（成分, 帯域）の番号）
+//!   `step` (f, nc) f32: 係数ごとの量子化の刻み（満点 = 2^22 の尺度）、`dstep` (s, f, nc) f32: Decoder が復号したヘッダの刻み（基本 CRC が通らない・欠落のフレームと、高域欠落のフレームの高域は 0）。ビットの属性: `pos`（仮数内の位置）、`coef_of_bit`（係数の、成分ごとに全帯域を並べた位置）。Y 帯域の係数のビットは最後に並び、半径の段のビットの LLR は半径の観測値から作る
 //! - `esn0` (s, f) f32、`scen` (s, 4) f32、`start` i64
 
 use crate::channel::{awgn_adc, Link, Scen};
 use crate::codec::analyze_stream;
 use crate::decoder::{block_steps, Decoder};
 use crate::encoder::Encoder;
+use crate::framing::observed_bits;
 use crate::layout::Layout;
 use crate::npz::{write_npz, Npy};
 use crate::profiles::Profile;
@@ -34,58 +35,32 @@ struct Transmitted {
 
 fn transmit(p: &Profile, lay: &Layout, frames: &[Vec<Vec<Vec<f64>>>]) -> Result<Transmitted, String> {
     let nfr = frames.len();
-    let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
+    let (nbit, ncoef) = (lay.n_obs_bits(), 2 * p.block);
     let mut enc = Encoder::new(p)?;
     let mut t = Transmitted { bits: vec![0; nfr * nbit], step: vec![0.0; nfr * ncoef], syms: Vec::with_capacity(nfr) };
     for (i, bands) in frames.iter().enumerate() {
-        let (bd, stream, sym) = enc.frame_parts(bands);
+        let (bd, _, sym) = enc.frame_parts(bands);
         t.syms.push(sym);
-        for (j, &idx) in lay.coef_stream_idx.iter().enumerate() {
-            t.bits[i * nbit + j] = stream[idx];
-        }
+        t.bits[i * nbit..(i + 1) * nbit].copy_from_slice(&observed_bits(lay, &bd));
         block_steps(lay, &bd, true, &mut t.step[i * ncoef..(i + 1) * ncoef]);
     }
     Ok(t)
 }
 
-/// 仮数ビット・係数の属性（`pos` `coef_of_bit` `strong` `protected` `group`）
+/// 仮数ビットの属性（`pos` `coef_of_bit`）
 struct BitAttrs {
     pos: Vec<i64>,
     coef_of_bit: Vec<i64>,
-    strong: Vec<u8>,
-    protected: Vec<u8>,
-    group: Vec<i64>,
 }
 
 impl BitAttrs {
-    fn new(p: &Profile, lay: &Layout) -> BitAttrs {
-        let mut protected = vec![0u8; lay.n_coef_bits()];
-        for &i in &lay.top_coef_idx {
-            protected[i] = 1;
-        }
-        let mut group = vec![0i64; lay.n_coef];
-        for (gi, &(ch, k)) in lay.coef_groups.iter().enumerate() {
-            let o = lay.coef_offset[&(ch, k)];
-            group[o..o + p.ncoef(k)].fill(gi as i64);
-        }
-        BitAttrs {
-            pos: lay.coef_pos.clone(),
-            coef_of_bit: lay.coef_flat.iter().map(|&v| v as i64).collect(),
-            strong: lay.coef_stream_idx.iter().map(|&i| (i < lay.n_strong) as u8).collect(),
-            protected,
-            group,
-        }
+    fn new(lay: &Layout) -> BitAttrs {
+        BitAttrs { pos: lay.obs_pos.clone(), coef_of_bit: lay.obs_full.iter().map(|&v| v as i64).collect() }
     }
 
     fn entries(&self) -> Vec<(&'static str, Npy)> {
-        let (nb, nc) = (self.pos.len(), self.group.len());
-        vec![
-            ("pos", Npy::i64(&self.pos, &[nb])),
-            ("coef_of_bit", Npy::i64(&self.coef_of_bit, &[nb])),
-            ("strong", Npy::u8(&self.strong, &[nb])),
-            ("protected", Npy::u8(&self.protected, &[nb])),
-            ("group", Npy::i64(&self.group, &[nc])),
-        ]
+        let nb = self.pos.len();
+        vec![("pos", Npy::i64(&self.pos, &[nb])), ("coef_of_bit", Npy::i64(&self.coef_of_bit, &[nb]))]
     }
 }
 
@@ -112,7 +87,14 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
     let lay = Layout::new(p)?;
     let frames = analyze_stream(&pcm[..nfr * b], p);
     let tx = transmit(p, &lay, &frames)?;
-    let truth: Vec<f32> = frames.iter().flatten().flatten().flatten().map(|&v| v as f32).collect();
+    let mut truth = Vec::with_capacity(nfr * 2 * b);
+    for fr in &frames {
+        for (ch, bands) in fr.iter().enumerate() {
+            for (k, c) in bands.iter().enumerate() {
+                truth.extend(c.iter().map(|&v| if p.bits(ch)[k] > 0 { v as f32 } else { 0.0 }));
+            }
+        }
+    }
     let rx = parallel_map(scens.len(), threads, |si| {
         let mut link = Link::new(&scens[si], nfr, seed, si as u64);
         let mut dec = Decoder::new(p).expect("プロファイルは検査済み");
@@ -124,7 +106,7 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
             .collect();
         Scenario { obs, esn0: link.esn0.iter().map(|&e| e as f32).collect() }
     });
-    Ok(MendDataset { nfr, ncoef: lay.n_coef, nbands: p.nbands(), scens: scens.to_vec(), truth, tx, attrs: BitAttrs::new(p, &lay), rx })
+    Ok(MendDataset { nfr, ncoef: 2 * b, nbands: p.nbands(), scens: scens.to_vec(), truth, tx, attrs: BitAttrs::new(&lay), rx })
 }
 
 /// f(0), f(1), ..., f(n-1) を threads 本のスレッドで計算して、順に返す
@@ -148,6 +130,7 @@ impl MendDataset {
     /// .npz に書く。start: 音源の中の開始位置（記録用）
     pub fn write(&self, path: &str, start: i64) -> std::io::Result<()> {
         let (s, f, nc) = (self.rx.len(), self.nfr, self.ncoef);
+        assert_eq!(self.truth.len(), f * nc, "原音の係数の数が合わない");
         let cat = |get: &dyn Fn(&Observation) -> &Vec<f32>| -> Vec<f32> {
             self.rx.iter().flat_map(|r| r.obs.iter().flat_map(|o| get(o).iter().copied())).collect()
         };
@@ -156,6 +139,8 @@ impl MendDataset {
         let scen: Vec<f32> = self.scens.iter().flat_map(|c| [c.e0 as f32, c.fade as u8 as f32, c.rate as f32, c.burst as f32]).collect();
         let llr: Vec<i8> = self.rx.iter().flat_map(|r| r.obs.iter().flat_map(|o| o.llr.iter().copied())).collect();
         let nbit = self.tx.bits.len() / f;
+        assert_eq!(cat(&|r| &r.coef).len(), s * f * nc, "復号した係数の数が合わない");
+        assert_eq!(cat(&|r| &r.dstep).len(), s * f * nc, "刻みの数が合わない");
         let mut entries = vec![
             ("truth", Npy::f32(&self.truth, &[f, nc])),
             ("dec", Npy::f32(&cat(&|r| &r.coef), &[s, f, nc])),

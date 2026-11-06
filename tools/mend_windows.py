@@ -25,7 +25,7 @@ class Windows:
         for fi in order[:n]:
             self._load(len(self.loaded), int(fi))
         self._rebuild()
-        self.ncomp = self.data["var"][0].shape[2]
+        self.comps = np.flatnonzero(self.bit_ok.numpy().any(1))                   # 送っている成分
 
     def _load(self, slot, fi):
         """files[fi] を slot に読み込む (slot が末尾なら追加)"""
@@ -104,4 +104,4 @@ class Windows:
     def batch(self, bs, rng, anywhere=False):
         """窓を bs 個、成分は窓ごとにランダムで切り出す"""
         locs = self.locate(bs, rng, anywhere)
-        return self.gather(locs, rng.integers(self.ncomp, size=bs))
+        return self.gather(locs, rng.choice(self.comps, size=bs))

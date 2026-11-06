@@ -23,9 +23,7 @@ from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.postnet import Transform  # noqa: E402
 from eval_post import load, lr, process, wave_of  # noqa: E402
-from eval_mendnet import CN_OFFSET  # noqa: E402
-
-FS = 32000
+from eval_mendnet import cn_offset  # noqa: E402
 
 
 def main():
@@ -40,7 +38,8 @@ def main():
     pin()
     torch.set_num_threads(len(CPUS))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    kind = PROFILES[a.profile].transform
+    p = PROFILES[a.profile]
+    kind, FS = p.transform, p.fs
     net, tf, tfc = load(a.ckpt, dev), Transform(kind).to(dev), Transform(kind)
     d = os.path.join(a.data, a.profile)
     files = sorted(glob.glob(os.path.join(d, "post", "awgn_val", "*.npz")))
@@ -55,7 +54,7 @@ def main():
             sc = int(np.flatnonzero(np.isclose(z["scen"][:, 0], e))[0])
             out, g = process(net, tf, z["e0"][sc], z["sd"][sc], z["status"][sc], dev)
             out["復号のまま"] = wave_of(dec[sc], tfc)
-            cn = f"CN{e + CN_OFFSET:g}"
+            cn = f"CN{e + cn_offset(p):.0f}"
             for k in ("復号のまま", "MendNet", "PostNet"):
                 sf.write(os.path.join(a.out, f"{name}_{cn}_{k}.wav"), lr(out[k]).astype(np.float32), FS, subtype="FLOAT")
             print(f"{name} {cn}: 判定がオン {g.mean():.0%}", flush=True)

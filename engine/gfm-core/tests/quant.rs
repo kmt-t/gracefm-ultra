@@ -84,9 +84,10 @@ fn quantization_error_is_within_half_a_step() {
                 let e = eidx + emin;
                 for j in 0..n {
                     let step = 2f64.powi((e - p.attn_at(ch, k, &attn, j)) as i32);
-                    assert!(m[j].abs() <= qmax_of(b), "仮数が範囲外");
+                    let (qmax, qmin) = (qmax_of(b), qmin_of(b, &p, ch, k));
+                    assert!((qmin..=qmax).contains(&m[j]), "仮数が範囲外");
                     // 飽和していなければ、誤差は刻みの半分以内
-                    if (m[j].abs()) < qmax_of(b) {
+                    if qmin < m[j] && m[j] < qmax {
                         assert!((c[j] - m[j] as f64 * step).abs() <= step / 2.0 + 1e-15, "{} ch{} k{} j{}", name, ch, k, j);
                     }
                 }
@@ -102,7 +103,7 @@ fn silence_and_overload_are_handled() {
     assert!(m.iter().all(|&v| v == 0) && eidx == 0, "無音は仮数 0、指数は最小");
     let b = p.bits(0)[0];
     let (m, _, _) = quantize_band(&[1e9, -1e9, 0.0, 0.0], 0, 0, &p, true);
-    assert_eq!((m[0], m[1]), (qmax_of(b), qmin_of(b)), "大きすぎる値は飽和する");
+    assert_eq!((m[0], m[1]), (qmax_of(b), qmin_of(b, &p, 0, 0)), "大きすぎる値は飽和する");
 }
 
 #[test]

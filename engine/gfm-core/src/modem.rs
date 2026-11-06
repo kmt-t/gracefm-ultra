@@ -1,4 +1,4 @@
-//! 変調（送信）と復調（受信）。GraceFM `gracefm/modem.py` に相当。QPSK と階層 16QAM。Y 方式は未対応。浮動小数点（信号点の平均エネルギーは 1）。
+//! 変調（送信）と復調（受信）。GraceFM `gracefm/modem.py` に相当。QPSK、階層 16QAM、Y 方式（QASK）。浮動小数点（信号点の平均エネルギーは 1）。
 
 pub const N_PREAMBLE: usize = 16;
 
@@ -13,6 +13,90 @@ pub fn prbs(n: usize) -> Vec<u8> {
             reg[i] = reg[i - 1];
         }
         reg[0] = b;
+    }
+    out
+}
+
+/// Y 方式の半径の段のビット数（仮数 7 bit の最上位は位相、残りが半径）と、隣の段の間隔（登録プロファイルは全部同じ）
+pub const Y_LOWER: usize = 6;
+const Y_LEVELS: usize = 1 << Y_LOWER;
+const Y_STEP: f64 = 2.0 / 105.0;
+
+fn y_scale() -> f64 {
+    let l = Y_LEVELS as f64;
+    (1.0 + Y_STEP * Y_STEP * (l * l - 1.0) / 12.0).sqrt()
+}
+
+fn y_radius(level: f64) -> f64 {
+    (1.0 + Y_STEP * (level - (Y_LEVELS - 1) as f64 / 2.0)) / y_scale()
+}
+
+/// Y の信号点の象限の符号: パリティが I 軸、最上位ビットが Q 軸
+fn y_sign(msb: u8, parity: u8) -> [f64; 2] {
+    [1.0 - 2.0 * parity as f64, 1.0 - 2.0 * msb as f64]
+}
+
+/// Y 方式の変調。u: 最上位ビット·2^Y_LOWER + 半径の段、parity: 最上位ビットのパリティ、mask: 係数ごとに 3 ビットのスクランブル
+pub fn y_modulate(u: &[i64], parity: &[u8], mask: &[u8]) -> Vec<[f64; 2]> {
+    let levels = Y_LEVELS as i64;
+    (0..u.len())
+        .map(|i| {
+            let (m, l) = (mask[3 * i..3 * i + 3][0], u[i] % levels);
+            let l = if mask[3 * i + 2] != 0 { levels - 1 - l } else { l };
+            let r = y_radius(l as f64) * std::f64::consts::FRAC_1_SQRT_2;
+            let s = y_sign((u[i] / levels) as u8 ^ m, parity[i] ^ mask[3 * i + 1]);
+            [s[0] * r, s[1] * r]
+        })
+        .collect()
+}
+
+/// 専用シンボルの位相から、最上位ビットとパリティの LLR（自然対数、正 = 0 らしい）。var: 軸あたりの雑音分散
+pub fn y_phase_llr(sym: &[[f64; 2]], mask: &[u8], var: f64) -> (Vec<f64>, Vec<f64>) {
+    let (lo, hi) = (y_radius(0.0), y_radius((Y_LEVELS - 1) as f64));
+    let (mut msb, mut par) = (Vec::with_capacity(sym.len()), Vec::with_capacity(sym.len()));
+    for (i, y) in sym.iter().enumerate() {
+        let unit = y[0].hypot(y[1]).clamp(lo, hi) * std::f64::consts::FRAC_1_SQRT_2;
+        let flip = |b: u8| if b != 0 { -1.0 } else { 1.0 };
+        msb.push((2.0 * y[1] * unit / var).clamp(-1000.0, 1000.0) * flip(mask[3 * i]));
+        par.push((2.0 * y[0] * unit / var).clamp(-1000.0, 1000.0) * flip(mask[3 * i + 1]));
+    }
+    (msb, par)
+}
+
+/// 象限（最上位ビットとパリティ）を決めた受信点の、半径の段の観測値と、段の単位の雑音分散
+pub fn y_level(y: &[f64; 2], msb: u8, parity: u8, mask: &[u8], var: f64) -> (f64, f64) {
+    let s = y_sign(msb ^ mask[0], parity ^ mask[1]);
+    let proj = (s[0] * y[0] + s[1] * y[1]) * std::f64::consts::FRAC_1_SQRT_2;
+    let scale = y_scale();
+    let top = (Y_LEVELS - 1) as f64;
+    let obs = (proj * scale - 1.0) / Y_STEP + top / 2.0;
+    (if mask[2] != 0 { top - obs } else { obs }, var * scale * scale / (Y_STEP * Y_STEP))
+}
+
+/// 半径の段の観測値 → 推定値と誤差分散（段の一様な事前分布へ向けて縮める）
+pub fn y_estimate(obs: f64, noise: f64) -> (f64, f64) {
+    let l = Y_LEVELS as f64;
+    let prior = (l * l - 1.0) / 12.0;
+    let gain = prior / (prior + noise);
+    let center = (l - 1.0) / 2.0;
+    ((center + gain * (obs - center)).clamp(0.0, l - 1.0), gain * noise)
+}
+
+/// 半径の段の各ビットの LLR（max-log、上位から Y_LOWER 個、正 = 0 らしい）
+pub fn y_level_llr(obs: f64, noise: f64) -> [f64; Y_LOWER] {
+    let mut out = [0.0; Y_LOWER];
+    for (i, x) in out.iter_mut().enumerate() {
+        let bit = Y_LOWER - 1 - i;
+        let (mut d1, mut d0) = (f64::MAX, f64::MAX);
+        for level in 0..Y_LEVELS {
+            let d = (obs - level as f64) * (obs - level as f64);
+            if (level >> bit) & 1 == 1 {
+                d1 = d1.min(d);
+            } else {
+                d0 = d0.min(d);
+            }
+        }
+        *x = ((d1 - d0) / (2.0 * noise)).clamp(-1000.0, 1000.0);
     }
     out
 }

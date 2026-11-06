@@ -23,9 +23,10 @@ from tools.common import wavio  # noqa: E402
 import rs  # noqa: E402
 
 SRC = os.path.join(GRACEFM, "eval_audio", "train_lossless")
-# 本家のエンコーダ → 本家のデコーダでの SNR [dB]（この音源の区間、2 秒）。GraceFM 8ba0ae0 で測定
+# 本家のエンコーダ → 本家のデコーダでの SNR [dB]（この音源の区間、2 秒）。GraceFM 8ba0ae0 で測定。Y の半径は雑音を受けるので、通信路は Es/N0 90 dB
 BASELINE_SNR = {"B200": 55.77, "B200M": 12.49, "M700": 56.77, "M700M": 12.49, "SUB100": 22.83, "SUB50M": 12.12, "SUB100-48K": 25.37,
-                "B200-L": 57.95, "B200M-L": 12.49, "M700-L": 59.31, "M700M-L": 12.49, "SUB100-L": 25.77, "SUB50M-L": 12.29, "SUB100-48K-L": 29.40}
+                "B200-L": 57.95, "B200M-L": 12.49, "M700-L": 59.31, "M700M-L": 12.49, "SUB100-L": 25.77, "SUB50M-L": 12.29, "SUB100-48K-L": 29.40,
+                "B200MY": 12.49, "B200Y": 56.28, "M700MY": 12.49, "M700Y": 57.67, "B200MY-L": 12.49, "B200Y-L": 58.33, "M700MY-L": 12.49, "M700Y-L": 59.76}
 TOLERANCE_DB = 0.5
 
 
@@ -48,7 +49,7 @@ def main():
         p = PROFILES[name]
         xi = clip(p)
         ref = xi / float(1 << 23)
-        frames = rs.tx(name, xi, scen=(40.0, 0, 0.0, 1.0), seed=1)
+        frames = rs.tx(name, xi, scen=(90.0, 0, 0.0, 1.0), seed=1)
         res = Decoder(p).run(rs.to_q22(frames), len(xi), 0)       # 本家の受信
         s_gfm = snr(ref, res.pcm / float(1 << 23))
         stats = res.stats

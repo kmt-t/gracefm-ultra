@@ -1,6 +1,6 @@
 //! フレームの送信（GraceFM `gracefm/framing.py` の pack の移植。暗号化なし）。
 
-use crate::codec::BlockData;
+use crate::codec::{offset_of, BlockData};
 use crate::fec;
 use crate::layout::Layout;
 
@@ -11,6 +11,29 @@ pub fn coefficient_bits(lay: &Layout, bd: &BlockData) -> Vec<u8> {
         flat_mant.extend(bd.mant[ch][k].as_ref().unwrap());
     }
     (0..lay.n_coef_bits()).map(|i| (((flat_mant[lay.coef_flat[i]] + lay.coef_offset_bits[i]) >> lay.coef_pos[i]) & 1) as u8).collect()
+}
+
+/// Y 帯域の仮数（オフセットバイナリ。最上位ビットが位相、残りが半径の段）
+pub fn y_u(lay: &Layout, bd: &BlockData) -> Vec<i64> {
+    let p = &lay.p;
+    lay.y_items.iter().map(|&(ch, k, j)| bd.mant[ch][k].as_ref().unwrap()[j] + offset_of(p.bits(ch)[k], p, ch, k)).collect()
+}
+
+/// Y 帯域の最上位ビット
+pub fn y_msb(lay: &Layout, u: &[i64]) -> Vec<u8> {
+    u.iter().enumerate().map(|(t, &v)| (v >> (lay.p.bits(lay.y_items[t].0)[lay.y_items[t].1] - 1)) as u8).collect()
+}
+
+/// 受信の観測の並び（Layout の obs_pos）の、送ったビット
+pub fn observed_bits(lay: &Layout, bd: &BlockData) -> Vec<u8> {
+    let mut out = coefficient_bits(lay, bd);
+    let u = y_u(lay, bd);
+    let mut t = 0;
+    for pos in &lay.obs_pos[lay.n_coef_bits()..] {
+        out.push(((u[t] >> pos) & 1) as u8);
+        t += (*pos == 0) as usize;
+    }
+    out
 }
 
 /// BlockData → 送信ビット列（n_tx 個、スクランブル前）
@@ -24,10 +47,13 @@ pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u
     }
     let coef = coefficient_bits(lay, bd);
     let top: Vec<u8> = lay.top_coef_idx.iter().map(|&i| coef[i]).collect();
+    let ymsb = y_msb(lay, &y_u(lay, bd));
     let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| prot[i]).collect();
     core.extend(lay.core_top.iter().map(|&i| top[i]));
+    core.extend(lay.core_y.iter().map(|&i| ymsb[i]));
     let mut high: Vec<u8> = lay.high_prot.iter().map(|&i| prot[i]).collect();
     high.extend(lay.high_top.iter().map(|&i| top[i]));
+    high.extend(lay.high_y.iter().map(|&i| ymsb[i]));
     let mut header_x = prot;
     header_x.extend(fec::crc_core(&core));
     if lay.has_high_crc {
@@ -54,6 +80,13 @@ pub fn pack(lay: &Layout, bd: &BlockData, stream_id: u64, counter: u64) -> Vec<u
             stream[lay.tail_idx[i]] = v;
         }
     }
+    if !ymsb.is_empty() {
+        let (par, tail) = fec::rsc_parity(&ymsb);
+        let tail_all: Vec<u8> = par[ymsb.len()..].iter().chain(tail.iter()).copied().collect();
+        for (i, &v) in tail_all.iter().enumerate() {
+            stream[lay.ytail_idx[i]] = v;
+        }
+    }
     for (i, &v) in coef.iter().enumerate() {
         stream[lay.coef_stream_idx[i]] = v;
     }
@@ -67,6 +100,8 @@ pub struct Unpacked {
     pub bd: BlockData,
     pub high_ok: bool,
     pub top_bits: Vec<u8>,
+    /// Y 帯域の最上位ビット（訂正後）
+    pub y_msb: Vec<u8>,
     /// ヘッダのフレーム番号（16 bit）
     pub counter: u64,
     /// 採用したヘッダの候補の順位（0 = 最尤）。0 でないとき、最尤の候補は CRC が合わなかった
@@ -87,11 +122,13 @@ pub struct UnpackOptions<'a> {
     /// ヘッダの候補の数（尤度の高い順。1 なら通常のビタビ復号と CRC 検査）。
     /// CRC は 12 bit なので、候補が多いほど、誤ったヘッダが偶然 CRC を通る確率（1 候補あたり 2^-12）が増える。8 なら、測定した範囲（Rayleigh 4〜8 dB まで）で誤採用は 0.2% 以下
     pub list: usize,
+    /// Y 帯域の、専用シンボルの位相から得た（最上位ビットの軟値、パリティの軟値）。なければ消失として扱う
+    pub y_soft: Option<(&'a [f64], &'a [f64])>,
 }
 
 impl Default for UnpackOptions<'_> {
     fn default() -> Self {
-        UnpackOptions { header_prior: None, list: 8 }
+        UnpackOptions { header_prior: None, list: 8, y_soft: None }
     }
 }
 
@@ -99,7 +136,7 @@ impl Default for UnpackOptions<'_> {
 /// ヘッダを尤度の高い順の候補にして（最尤が合わなければリストビタビ）、基本 CRC が最初に合うものを採る。合う候補がなければ None。
 /// 純粋な関数。
 pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> Option<Unpacked> {
-    use crate::codec::{offset_of, qmax_of, qmin_of};
+    use crate::codec::{qmax_of, qmin_of};
     let p = &lay.p;
     let pick = |idx: &[usize]| -> Vec<f64> { idx.iter().map(|&i| soft[i]).collect() };
     let mut header_soft = pick(&lay.hdata_idx);
@@ -117,12 +154,24 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> O
     } else {
         Vec::new()
     };
+    let ymsb: Vec<u8> = if lay.y_items.is_empty() {
+        Vec::new()
+    } else {
+        let t6 = fec::K - 1;
+        let n = lay.y_items.len();
+        let zero = vec![0.0; n];
+        let (msb, par) = opt.y_soft.unwrap_or((&zero, &zero));
+        let mut parity = par.to_vec();
+        parity.extend(pick(&lay.ytail_idx[..t6]));
+        fec::rsc_decode(msb, &parity, &pick(&lay.ytail_idx[t6..]))
+    };
     let n_core = fec::CRC_CORE.0;
     // 基本 CRC と固定値が合えば、高域 CRC の結果を返す
     let accept = |prot: &[u8]| -> Option<bool> {
         let body = &prot[..lay.n_prot];
         let mut core: Vec<u8> = lay.core_prot.iter().map(|&i| body[i]).collect();
         core.extend(lay.core_top.iter().map(|&i| top[i]));
+        core.extend(lay.core_y.iter().map(|&i| ymsb[i]));
         if fec::crc_core(&core) != prot[lay.n_prot..lay.n_prot + n_core] {
             return None;
         }
@@ -132,6 +181,7 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> O
         }
         let mut high: Vec<u8> = lay.high_prot.iter().map(|&i| body[i]).collect();
         high.extend(lay.high_top.iter().map(|&i| top[i]));
+        high.extend(lay.high_y.iter().map(|&i| ymsb[i]));
         Some(!lay.has_high_crc || fec::crc_high(&high) == prot[lay.n_prot + n_core..])
     };
     let (hpar, htail) = (pick(&lay.hpar_idx), pick(&lay.htail_idx));
@@ -172,11 +222,24 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> O
     for (j, &cf) in lay.coef_flat.iter().enumerate() {
         u_flat[cf] += (coef_bits[j] as i64) << lay.coef_pos[j];
     }
+    for (t, &cf) in lay.y_flat.iter().enumerate() {
+        let (ch, k, _) = lay.y_items[t];
+        u_flat[cf] += (ymsb[t] as i64) << (p.bits(ch)[k] - 1);
+    }
     let mut mant = vec![vec![None; nb]; 2];
     for &(ch, k) in &lay.coef_groups {
         let o = lay.coef_offset[&(ch, k)];
         let b = p.bits(ch)[k];
-        mant[ch][k] = Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b)).clamp(qmin_of(b), qmax_of(b))).collect());
+        mant[ch][k] =
+            Some(u_flat[o..o + p.ncoef(k)].iter().map(|&u| (u - offset_of(b, p, ch, k)).clamp(qmin_of(b, p, ch, k), qmax_of(b))).collect());
     }
-    Some(Unpacked { bd: BlockData { mant, eidx, attn }, high_ok, top_bits: top, counter: val(&hdr[8..lay.header_bits]), rank, gap })
+    Some(Unpacked {
+        bd: BlockData { mant, eidx, attn },
+        high_ok,
+        top_bits: top,
+        y_msb: ymsb,
+        counter: val(&hdr[8..lay.header_bits]),
+        rank,
+        gap,
+    })
 }

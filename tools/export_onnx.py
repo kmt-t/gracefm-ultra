@@ -51,6 +51,7 @@ class MendGraph(nn.Module):
         self.register_buffer("W2", W ** 2)
         for k in ("offset", "qmin", "qmax"):
             self.register_buffer(k, getattr(meta, k).reshape(2, 64))
+        self.register_buffer("sent", (self.qmax > 0).float())
 
     def forward(self, coef, var, status, gap, comp, hint_h, hint_q, llr, dstep):
         x, _, _, sf = build_input_bits(coef, var, status, gap, comp, hint_h, hint_q, llr, dstep)
@@ -60,7 +61,7 @@ class MendGraph(nn.Module):
         m = torch.maximum(torch.minimum(m, self.qmax[comp][:, None]), self.qmin[comp][:, None])
         v = torch.bmm(p1 * (1 - p1), self.W2[comp]) + 1.0 / 12
         step = step_of(st) / Q22
-        return m * step, v.sqrt() * step
+        return m * step, v.sqrt() * step * self.sent[comp][:, None]
 
 
 def widths(net):
@@ -192,7 +193,7 @@ def main():
     # 逐次処理と、全体を一度に通したものの一致 (実際のデータ、判定の切り替えあり)
     from eval_post import process
     pz = np.load(sorted(glob.glob(os.path.join(a.data, a.profile, "post", "awgn_val", "*.npz")))[0])
-    s = int(np.flatnonzero(np.isclose(pz["scen"][:, 0], 22.0))[0])
+    s = int(np.abs(pz["scen"][:, 0] - 22.0).argmin())
     T = 3000
     full, g = process(net, Transform(PROFILES[a.profile].transform), pz["e0"][s][:T], pz["sd"][s][:T], pz["status"][s][:T], "cpu")
     ms = lambda v: torch.from_numpy(np.ascontiguousarray(v[:T].astype(np.float32).reshape(-1, 2, 64).transpose(1, 0, 2)))  # noqa: E731
