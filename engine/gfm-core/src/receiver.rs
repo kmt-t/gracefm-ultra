@@ -4,7 +4,6 @@
 use crate::decoder::{Decoder, Stats};
 use crate::gate::Gate;
 use crate::post::{PostFilter, PostModel, AHEAD};
-use crate::prior::PriorConfig;
 use crate::profiles::Profile;
 use crate::restore::{MendModel, Mended, Mender, Observation, HOP, NC, WIN};
 
@@ -22,11 +21,11 @@ pub struct Receiver<M: MendModel, P: PostModel> {
 }
 
 impl<M: MendModel, P: PostModel> Receiver<M, P> {
-    pub fn new(p: &Profile, cfg: PriorConfig, mend: M, post: P) -> Result<Receiver<M, P>, String> {
+    pub fn new(p: &Profile, mend: M, post: P) -> Result<Receiver<M, P>, String> {
         if p.bits_s.iter().all(|&v| v == 0) || p.block != NC {
             return Err(format!("{}: MendNet と PostNet は M・S の 2 成分、ブロック長 64 のプロファイル用です", p.name));
         }
-        let dec = Decoder::new(p, cfg)?;
+        let dec = Decoder::new(p)?;
         let mender = Mender::new(&dec.lay, mend);
         Ok(Receiver { dec, mender, gate: Gate::new(), post: PostFilter::new(post), post_on: 0, switches: 0 })
     }

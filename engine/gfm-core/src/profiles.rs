@@ -90,9 +90,6 @@ impl Profile {
     pub fn high_k(&self) -> usize {
         self.nbands() - 2
     }
-    pub fn frames_per_sec(&self) -> u32 {
-        self.fs / self.block as u32
-    }
 }
 
 #[allow(clippy::too_many_arguments)]

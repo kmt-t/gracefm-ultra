@@ -39,13 +39,12 @@ def to_q22(frames):
     return [None if f is None else np.rint(f * (1 << 22)).astype(np.int64) for f in frames]
 
 
-def tx(profile, pcm24, scen=(30.0, 0, 0.0, 1.0), seed=1, stream_id=0, offset=0, si=0):
+def tx(profile, pcm24, scen=(30.0, 0, 0.0, 1.0), seed=1):
     """送信と通信路。scen = (基準 Es/N0 [dB], Rayleigh か (0/1), 欠落率, 平均バースト長)。返り値: フレームのリスト（実数）"""
     with tempfile.TemporaryDirectory() as d:
         raw, out = os.path.join(d, "x.raw"), os.path.join(d, "a.sym")
         write_pcm(raw, pcm24)
-        cmd = [os.path.join(BIN, "gfm-tx"), "--profile", profile, "--pcm", raw, "--seed", str(seed), "--stream-id", str(stream_id),
-               "--offset", str(offset), "--si", str(si), "--scen", ",".join(str(float(v)) for v in scen), "--out", out]
+        cmd = [os.path.join(BIN, "gfm-tx"), "--profile", profile, "--pcm", raw, "--seed", str(seed), "--scen", ",".join(str(float(v)) for v in scen), "--out", out]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode:
             raise RuntimeError(r.stderr[-400:])

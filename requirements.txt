@@ -4,3 +4,6 @@ soundfile>=0.12
 threadpoolctl>=3.1
 torch>=2.2  # GPU で学習する (CUDA 版。例: pip install torch --index-url https://download.pytorch.org/whl/cu130)
 visqol-python==3.8.0  # 評価
+onnx>=1.16  # ONNX の書き出し
+onnxscript>=0.7
+onnxruntime==1.31.1  # 受信 (engine/gfm-rx が共有ライブラリを読み込む)、書き出しの検証

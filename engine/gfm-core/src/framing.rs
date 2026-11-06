@@ -84,8 +84,6 @@ fn val(bits: &[u8]) -> u64 {
 pub struct UnpackOptions<'a> {
     /// ヘッダの情報ビット（n_hdata 個）の事前の軟値（正 = 0 らしい）。ビタビ復号の情報ビット側に足す
     pub header_prior: Option<&'a [f64]>,
-    /// 保護された仮数の上位ビット（n_top 個、Layout の top_coef_idx の並び）の事前の軟値
-    pub top_prior: Option<&'a [f64]>,
     /// ヘッダの候補の数（尤度の高い順。1 なら通常のビタビ復号と CRC 検査）。
     /// CRC は 12 bit なので、候補が多いほど、誤ったヘッダが偶然 CRC を通る確率（1 候補あたり 2^-12）が増える。8 なら、測定した範囲（Rayleigh 4〜8 dB まで）で誤採用は 0.2% 以下
     pub list: usize,
@@ -93,7 +91,7 @@ pub struct UnpackOptions<'a> {
 
 impl Default for UnpackOptions<'_> {
     fn default() -> Self {
-        UnpackOptions { header_prior: None, top_prior: None, list: 8 }
+        UnpackOptions { header_prior: None, list: 8 }
     }
 }
 
@@ -115,13 +113,7 @@ pub fn unpack(lay: &Layout, soft: &[f64], bits: &[u8], opt: &UnpackOptions) -> O
         let top_stream: Vec<usize> = lay.top_coef_idx.iter().map(|&i| lay.coef_stream_idx[i]).collect();
         let mut par = pick(&lay.parity_idx);
         par.extend(pick(&lay.tail_idx[..t6]));
-        let mut top_soft = pick(&top_stream);
-        if let Some(pr) = opt.top_prior {
-            for (x, p) in top_soft.iter_mut().zip(pr) {
-                *x += p;
-            }
-        }
-        fec::rsc_decode(&top_soft, &par, &pick(&lay.tail_idx[t6..]))
+        fec::rsc_decode(&pick(&top_stream), &par, &pick(&lay.tail_idx[t6..]))
     } else {
         Vec::new()
     };

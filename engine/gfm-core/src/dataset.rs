@@ -20,7 +20,6 @@ use crate::decoder::{block_steps, Decoder};
 use crate::encoder::Encoder;
 use crate::layout::Layout;
 use crate::npz::{write_npz, Npy};
-use crate::prior::PriorConfig;
 use crate::profiles::Profile;
 use crate::restore::Observation;
 
@@ -36,7 +35,7 @@ struct Transmitted {
 fn transmit(p: &Profile, lay: &Layout, pcm: &[[f64; 2]]) -> Result<Transmitted, String> {
     let nfr = pcm.len() / p.block;
     let (nbit, ncoef) = (lay.n_coef_bits(), lay.n_coef);
-    let mut enc = Encoder::new(p, 0, 0)?;
+    let mut enc = Encoder::new(p)?;
     let mut t = Transmitted { bits: vec![0; nfr * nbit], step: vec![0.0; nfr * ncoef], syms: Vec::with_capacity(nfr) };
     for i in 0..nfr {
         let (bd, stream, sym) = enc.frame_parts(&pcm[i * p.block..(i + 1) * p.block]);
@@ -116,7 +115,7 @@ pub fn generate_mend(p: &Profile, pcm: &[[f64; 2]], scens: &[Scen], seed: u64, t
         (0..nfr).flat_map(|i| analyze(&pcm[i * b..(i + 1) * b], p).into_iter().flatten().flatten().map(|v| v as f32)).collect();
     let rx = parallel_map(scens.len(), threads, |si| {
         let mut link = Link::new(&scens[si], nfr, seed, si as u64);
-        let mut dec = Decoder::new(p, PriorConfig::FULL).expect("プロファイルは検査済み");
+        let mut dec = Decoder::new(p).expect("プロファイルは検査済み");
         let obs = (0..nfr)
             .map(|i| {
                 let rx = (!link.lost[i]).then(|| awgn_adc(&tx.syms[i], link.esn0[i], &mut link.noise));

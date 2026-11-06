@@ -6,14 +6,13 @@ use gfm_core::codec::quant::qmax_of;
 use gfm_core::decoder::{Decoder, Status};
 use gfm_core::encoder::Encoder;
 use gfm_core::framing::UnpackOptions;
-use gfm_core::prior::PriorConfig;
 use gfm_core::profiles::profile_by_name;
 
 #[test]
 fn hint_of_a_failed_frame_correlates_with_the_true_mantissa() {
     let p = profile_by_name("B200").unwrap();
-    let dec = Decoder::new(&p, PriorConfig::NONE).unwrap();
-    let mut enc = Encoder::new(&p, 0, 0).unwrap();
+    let dec = Decoder::new(&p).unwrap();
+    let mut enc = Encoder::new(&p).unwrap();
     let mut noise = Gauss::new(7);
     let pcm = common::stereo(64 * 400, 3);
     let (mut dot, mut norm, mut failed) = (0.0, 0.0, 0);

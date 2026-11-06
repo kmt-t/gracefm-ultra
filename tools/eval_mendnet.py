@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 MendNet の評価。MendNet の係数は、出力の LLR から作る仮数の期待値 × 刻み (E0、mendnet.soft_e0)。怪しさは、その事後標準偏差。
-比べる相手は、復号のまま・AR 補間 (時間領域の両側補間)。
 
 - 既定: 検証データ (data/<profile>/mend/val) の窓で、使えないフレームの SNR [dB] を使えない連続区間の長さごとに、使えるフレームの SNR、
   怪しさと実際の誤差の順位相関 (フレームごと) を出す。
@@ -29,8 +28,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
-from gracefm_ultra.mendnet import Q22, WIN, MendNet, haar_fwd, haar_inv, make_meta, run_both, soft_e0  # noqa: E402
-from gracefm_ultra.plc_ar import interpolate  # noqa: E402
+from gracefm_ultra.mendnet import Q22, WIN, MendNet, haar_inv, make_meta, run_both, soft_e0  # noqa: E402
 from tools.common import wavio  # noqa: E402
 from mend_windows import Windows  # noqa: E402
 
@@ -75,18 +73,7 @@ def runs_of(us):
     return run
 
 
-def ar_fill(coef, usable):
-    """窓の係数 (T,64) の、使えないフレームを、時間領域の AR 両側補間で埋める"""
-    x = haar_inv(coef).reshape(-1)
-    run = runs_of(usable)
-    i = 0
-    while i < len(usable):
-        if run[i]:
-            x[i * 64:(i + run[i]) * 64] = interpolate(x, i * 64, (i + run[i]) * 64)
-            i += run[i]
-        else:
-            i += 1
-    return haar_fwd(x.reshape(-1, 64))
+
 
 
 def rank_corr(a, b):
@@ -95,7 +82,7 @@ def rank_corr(a, b):
 
 
 def eval_windows(va, net, meta, n):
-    methods = ["AR", "MendNet"]
+    methods = ["MendNet"]
     acc, keep = {}, {m: [0.0, 0.0] for m in METHODS}
     unc, err = [], []
     rng = np.random.default_rng(7)
@@ -104,8 +91,6 @@ def eval_windows(va, net, meta, n):
         out, sd, t = {k: v[0] for k, v in out.items()}, sd[0], t[0]
         us = status[0] <= 1
         run = runs_of(us)
-        c = out["復号のまま"]
-        out["AR"] = np.concatenate([ar_fill(c[:, :64].astype(np.float64), us), ar_fill(c[:, 64:].astype(np.float64), us)], -1)
         for k in keep:
             keep[k][0] += float((t[us] ** 2).sum())
             keep[k][1] += float(((out[k][us] - t[us]) ** 2).sum())

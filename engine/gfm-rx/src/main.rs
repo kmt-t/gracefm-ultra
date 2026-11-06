@@ -1,14 +1,13 @@
 //! 受信（復号、MendNet、PostNet。`gfm_core::receiver`）。フレームを 1 つずつ受信機に入れる（実際の受信と同じ流れ）。使い方:
-//!   gfm-rx --profile B200 --frames a.sym --out out.raw [--models models/B200] [--ort libonnxruntime.so] [--prior none|full] [--threads 6]
+//!   gfm-rx --profile B200 --frames a.sym --out out.raw [--models models/B200] [--ort libonnxruntime.so] [--threads 6]
 //! a.sym（gfm-tx の出力）: u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個のフラグ (u8、1 = 届いた), 届いたフレームの I/Q (f32 リトルエンディアン、±1 = 1.0)。
 //! out.raw: L/R の交互の f32（満点 ±1）、フレーム数 × ブロック長のサンプル。
 //! --models: mendnet.onnx と postnet.onnx のディレクトリ（`tools/export_onnx.py` が書く）。
-//! --ort: ONNX Runtime の共有ライブラリ（既定は環境変数 ORT_DYLIB_PATH）。--prior: ヘッダの事前知識（既定 full）。--threads: 推論のスレッド数。
+//! --ort: ONNX Runtime の共有ライブラリ（既定は環境変数 ORT_DYLIB_PATH）。--threads: 推論のスレッド数。
 //! 標準エラー出力に、フレームの統計、超解像をかけた割合と切り替えの回数、処理時間（実時間比）、1 回の推論の最大の処理時間、
 //! 遅延（確定待ち + 最大の処理時間）、最大の常駐メモリを書く。
 
 use gfm_core::post::{PostInput, PostModel, PostOutput, BINS, LOOKAHEAD, MDCT_HOP};
-use gfm_core::prior::PriorConfig;
 use gfm_core::profiles::profile_by_name;
 use gfm_core::receiver::Receiver;
 use gfm_core::restore::{MendBatch, MendModel, DELAY, NC, WIN};
@@ -138,7 +137,6 @@ fn main() {
     let mut models = "models/B200".to_string();
     let mut ort_path = std::env::var("ORT_DYLIB_PATH").unwrap_or_default();
     let mut threads = 6usize;
-    let mut cfg = PriorConfig::FULL;
     let mut i = 1;
     while i < args.len() {
         let next = args.get(i + 1).cloned().unwrap_or_else(|| panic!("{} に値がありません", args[i]));
@@ -149,13 +147,6 @@ fn main() {
             "--models" => models = next,
             "--ort" => ort_path = next,
             "--threads" => threads = next.parse().unwrap(),
-            "--prior" => {
-                cfg = match next.as_str() {
-                    "none" => PriorConfig::NONE,
-                    "full" => PriorConfig::FULL,
-                    v => panic!("--prior は none / full: {}", v),
-                }
-            }
             a => panic!("不明な引数: {}", a),
         }
         i += 2;
@@ -178,7 +169,7 @@ fn main() {
         b.commit_from_file(&path).unwrap_or_else(|e| fail(&e))
     };
     let mut rx =
-        Receiver::new(&p, cfg, OrtMend(session("mendnet.onnx")), OrtPost::new(session("postnet.onnx"))).unwrap_or_else(|e| panic!("{}", e));
+        Receiver::new(&p, OrtMend(session("mendnet.onnx")), OrtPost::new(session("postnet.onnx"))).unwrap_or_else(|e| panic!("{}", e));
     let fr = read_sym(&frames);
     let mut pcm: Vec<[f64; 2]> = Vec::with_capacity(fr.len() * p.block);
     let (t0, mut worst) = (std::time::Instant::now(), 0f64);

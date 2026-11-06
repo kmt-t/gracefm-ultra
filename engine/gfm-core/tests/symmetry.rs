@@ -3,7 +3,6 @@
 use gfm_core::codec::synthesize;
 use gfm_core::decoder::{DecodedFrame, Decoder, Status};
 use gfm_core::encoder::Encoder;
-use gfm_core::prior::PriorConfig;
 use gfm_core::profiles::profile_by_name;
 
 fn signal(n: usize, seed: u64) -> Vec<[f64; 2]> {
@@ -24,13 +23,13 @@ fn signal(n: usize, seed: u64) -> Vec<[f64; 2]> {
 }
 
 fn decode(p: &gfm_core::profiles::Profile, frames: &[Option<Vec<[f64; 2]>>]) -> (Vec<DecodedFrame>, Decoder) {
-    let mut dec = Decoder::new(p, PriorConfig::FULL).unwrap();
+    let mut dec = Decoder::new(p).unwrap();
     let out = frames.iter().map(|f| dec.push(f.as_deref())).collect();
     (out, dec)
 }
 
 fn frames_of(p: &gfm_core::profiles::Profile, x: &[[f64; 2]]) -> Vec<Option<Vec<[f64; 2]>>> {
-    Encoder::new(p, 0, 0).unwrap().run(x).into_iter().map(Some).collect()
+    Encoder::new(p).unwrap().run(x).into_iter().map(Some).collect()
 }
 
 #[test]

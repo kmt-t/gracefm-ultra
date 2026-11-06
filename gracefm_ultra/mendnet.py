@@ -12,16 +12,6 @@ COUNTS = [4, 4, 8, 16, 32]
 BAND = np.repeat(np.arange(5), COUNTS)
 
 
-def haar_fwd(x):
-    """x: (..., 64) → (..., 64) 係数。並びは gracefm と同じ [k=0 (4), k=1 (4), k=2 (8), k=3 (16), k=4 (32)]"""
-    a, det = np.asarray(x, np.float64), []
-    for _ in range(4):
-        e, o = a[..., 0::2], a[..., 1::2]
-        det.append((e - o) / np.sqrt(2))
-        a = (e + o) / np.sqrt(2)
-    return np.concatenate([a] + det[::-1], -1)
-
-
 def haar_inv(c):
     c = np.asarray(c, np.float64)
     a, o = c[..., :4], 4

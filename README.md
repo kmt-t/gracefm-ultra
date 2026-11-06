@@ -29,9 +29,9 @@
 
 ## ディレクトリ
 
-- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）、AR 補間（`plc_ar.py`、評価の比較用）
+- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
 - `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）。`engine/models/B200/` に受信が使う ONNX
-- `tools/`: データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendbits.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_mendbits.py`、`eval_post.py`、`baseline.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）
+- `tools/`: 音源の収集（`collect_audio.py`）、データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendbits.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_post.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）
 - `runs/`: 学習・評価のスクリプトとログ（git 管理外）
 
 ## 学習から受信まで

@@ -28,9 +28,4 @@ impl Scrambler {
             hard[i] ^= self.seq[i];
         }
     }
-
-    /// 単独の LLR の符号を戻す（位置 i）
-    pub fn sign(&self, i: usize) -> bool {
-        self.seq[i] == 1
-    }
 }

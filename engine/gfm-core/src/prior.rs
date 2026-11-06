@@ -10,20 +10,6 @@
 use crate::codec::quant::BlockData;
 use crate::layout::Layout;
 
-/// 事前知識の設定
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PriorConfig {
-    /// フレーム番号と既知の固定ビット
-    pub counter: bool,
-    /// 直前のフレームの指数
-    pub temporal: bool,
-}
-
-impl PriorConfig {
-    pub const NONE: PriorConfig = PriorConfig { counter: false, temporal: false };
-    pub const FULL: PriorConfig = PriorConfig { counter: true, temporal: true };
-}
-
 /// 既知のビットの事前の軟値の大きさ
 const KNOWN: f64 = 12.0;
 /// フレーム番号の事前の軟値の大きさ（番号が飛んでいたら CRC が合わないだけなので、控えめに）
@@ -61,30 +47,23 @@ impl Tracker {
     }
 
     /// 位置 idx のフレームのヘッダの情報ビット（n_hdata 個）の事前の軟値（正 = 0 らしい）
-    pub fn header_prior(&self, lay: &Layout, idx: usize, cfg: &PriorConfig) -> Vec<f64> {
+    pub fn header_prior(&self, lay: &Layout, idx: usize) -> Vec<f64> {
         let mut prior = vec![0.0; lay.n_hdata];
         let p = &lay.p;
-        if cfg.counter {
-            // プロファイル ID（4）、系統（1、不明）、暗号化（1、0）、形式識別子（2）
-            set_bits(&mut prior[0..4], p.pid as u64, KNOWN);
-            prior[5] = KNOWN;
-            set_bits(&mut prior[6..8], p.format_id as u64, KNOWN);
-            if let Some((i0, c0)) = self.last.filter(|&(i0, _)| idx >= i0 && idx - i0 <= MAX_AGE) {
-                set_bits(&mut prior[8..lay.header_bits], (c0 + (idx - i0) as u64) & 0xFFFF, COUNTER);
-            }
+        // プロファイル ID（4）、系統（1、不明）、暗号化（1、0）、形式識別子（2）
+        set_bits(&mut prior[0..4], p.pid as u64, KNOWN);
+        prior[5] = KNOWN;
+        set_bits(&mut prior[6..8], p.format_id as u64, KNOWN);
+        if let Some((i0, c0)) = self.last.filter(|&(i0, _)| idx >= i0 && idx - i0 <= MAX_AGE) {
+            set_bits(&mut prior[8..lay.header_bits], (c0 + (idx - i0) as u64) & 0xFFFF, COUNTER);
         }
         for (n, &(ch, k)) in lay.exp_items.iter().enumerate() {
-            let mut dist: Option<Vec<f64>> = None;
-            let levels = 1usize << p.exp_bits;
-            if cfg.temporal {
-                if let Some((i0, e0)) = self.exps.get(ch).and_then(|v| v[k]).filter(|&(i0, _)| idx >= i0 && idx - i0 <= MAX_AGE) {
-                    let scale = (0.5 + 0.1 * (idx - i0) as f64).min(3.0);
-                    dist = Some((0..levels).map(|e| (-((e as i64 - e0).abs() as f64) / scale).exp() + PROB_FLOOR).collect());
-                }
-            }
-            if let Some(d) = dist {
+            if let Some((i0, e0)) = self.exps.get(ch).and_then(|v| v[k]).filter(|&(i0, _)| idx >= i0 && idx - i0 <= MAX_AGE) {
+                let scale = (0.5 + 0.1 * (idx - i0) as f64).min(3.0);
+                let dist: Vec<f64> =
+                    (0..1usize << p.exp_bits).map(|e| (-((e as i64 - e0).abs() as f64) / scale).exp() + PROB_FLOOR).collect();
                 let start = lay.header_bits + n * p.exp_bits;
-                bit_llrs(&d, &mut prior[start..start + p.exp_bits]);
+                bit_llrs(&dist, &mut prior[start..start + p.exp_bits]);
             }
         }
         prior

@@ -9,26 +9,26 @@ use crate::modem::Modem;
 use crate::profiles::Profile;
 use crate::scrambler::Scrambler;
 
+/// ヘッダの系統のビット（主系）
+const MAIN_STREAM: u64 = 0;
+
 pub struct Encoder {
     pub p: Profile,
     pub lay: Layout,
     pub modem: Modem,
     pub scrambler: Scrambler,
     pub nsym: usize,
-    stream_id: u64,
-    offset: usize,
     frame_no: u64,
     clip_opt: bool,
 }
 
 impl Encoder {
-    /// stream_id: 系統（主 0、副 1）、offset: 先頭に入れる無音のサンプル数（`Decoder::run` の offset と対）
-    pub fn new(p: &Profile, stream_id: u64, offset: usize) -> Result<Encoder, String> {
+    pub fn new(p: &Profile) -> Result<Encoder, String> {
         let lay = Layout::new(p)?;
         let modem = Modem::new(p.qam16h, p.alpha);
         let nsym = modem.n_symbols(lay.n_tx, lay.n_strong);
         let scrambler = Scrambler::new(nsym * modem.bits_per_symbol());
-        Ok(Encoder { p: p.clone(), lay, modem, scrambler, nsym, stream_id, offset, frame_no: 0, clip_opt: true })
+        Ok(Encoder { p: p.clone(), lay, modem, scrambler, nsym, frame_no: 0, clip_opt: true })
     }
 
     /// 1 ブロック（満点 ±1 の L/R）のシンボル（プリアンブル込み）
@@ -39,7 +39,7 @@ impl Encoder {
     /// frame と同じ。途中の BlockData と、スクランブル前の送信ビット列も返す（学習データ生成用）
     pub fn frame_parts(&mut self, pcm: &[[f64; 2]]) -> (BlockData, Vec<u8>, Vec<[f64; 2]>) {
         let bd = encode_block(pcm, &self.p, self.clip_opt);
-        let stream = pack(&self.lay, &bd, self.stream_id, self.frame_no);
+        let stream = pack(&self.lay, &bd, MAIN_STREAM, self.frame_no);
         self.frame_no += 1;
         let mut buf = vec![0u8; self.nsym * self.modem.bits_per_symbol()];
         buf[..stream.len()].copy_from_slice(&stream);
@@ -48,11 +48,10 @@ impl Encoder {
         (bd, stream, sym)
     }
 
-    /// 全体: 先頭に offset サンプルの無音を入れ、ブロックの整数倍に 0 で詰めて、フレームごとに符号化する
+    /// 全体: ブロックの整数倍に 0 で詰めて、フレームごとに符号化する
     pub fn run(&mut self, pcm: &[[f64; 2]]) -> Vec<Vec<[f64; 2]>> {
         let b = self.p.block;
-        let mut x = vec![[0f64; 2]; self.offset];
-        x.extend_from_slice(pcm);
+        let mut x = pcm.to_vec();
         let nfr = x.len().div_ceil(b);
         x.resize(nfr * b, [0.0, 0.0]);
         (0..nfr).map(|i| self.frame(&x[i * b..(i + 1) * b])).collect()

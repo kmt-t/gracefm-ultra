@@ -8,7 +8,7 @@ use crate::codec::BlockData;
 use crate::framing::{unpack, UnpackOptions};
 use crate::layout::Layout;
 use crate::modem::{Modem, N_PREAMBLE};
-use crate::prior::{PriorConfig, Tracker};
+use crate::prior::Tracker;
 use crate::profiles::{Profile, MAX_BANDS};
 use crate::scrambler::Scrambler;
 
@@ -131,19 +131,17 @@ pub struct Decoder {
     modem: Modem,
     scrambler: Scrambler,
     digital_nsym: usize,
-    cfg: PriorConfig,
     tracker: Tracker,
     pub stats: Stats,
 }
 
 impl Decoder {
-    /// cfg: ヘッダの事前知識の設定
-    pub fn new(p: &Profile, cfg: PriorConfig) -> Result<Decoder, String> {
+    pub fn new(p: &Profile) -> Result<Decoder, String> {
         let lay = Layout::new(p)?;
         let modem = Modem::new(p.qam16h, p.alpha);
         let digital_nsym = modem.n_symbols(lay.n_tx, lay.n_strong);
         let scrambler = Scrambler::new(digital_nsym * modem.bits_per_symbol());
-        Ok(Decoder { p: p.clone(), lay, modem, scrambler, digital_nsym, cfg, tracker: Tracker::new(), stats: Stats::default() })
+        Ok(Decoder { p: p.clone(), lay, modem, scrambler, digital_nsym, tracker: Tracker::new(), stats: Stats::default() })
     }
 
     fn missing(&self, status: Status, llr: Vec<f64>) -> DecodedFrame {
@@ -217,8 +215,8 @@ impl Decoder {
     /// 次のフレームを復号する。ヘッダの事前知識は、直前までに復号したヘッダから作る
     pub fn push(&mut self, sym: Option<&[[f64; 2]]>) -> DecodedFrame {
         let i = self.stats.frames;
-        let prior = (self.cfg.counter || self.cfg.temporal).then(|| self.tracker.header_prior(&self.lay, i, &self.cfg));
-        let (d, recovered) = self.decode_frame(sym, &UnpackOptions { header_prior: prior.as_deref(), ..UnpackOptions::default() });
+        let prior = self.tracker.header_prior(&self.lay, i);
+        let (d, recovered) = self.decode_frame(sym, &UnpackOptions { header_prior: Some(&prior), ..UnpackOptions::default() });
         if let Some((counter, bd)) = &d.header {
             self.tracker.observe(i, *counter, bd);
         }
