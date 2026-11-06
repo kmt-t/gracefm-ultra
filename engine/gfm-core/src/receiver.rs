@@ -1,5 +1,5 @@
 //! 受信（1 系統）: フレームのシンボル → 復号（decoder.rs）→ 補間（restore.rs、MendNet）→ 判定（gate.rs）→ 後段（post.rs、PostNet）→ 音声。
-//! フレームを 1 つずつ入れ、音声は補間の窓が進むたび（HOP フレームごと）に出る。遅れは補間の確定待ちの DELAY フレーム（後段の先読みは暫定値で賄う）。
+//! フレームを 1 つずつ入れ、音声は補間の窓が進むたび（HOP フレームごと）に出る。遅れは補間の確定待ちの DELAY フレームと、合成の届く REACH フレーム（後段の先読みは暫定値で賄う）。
 
 use crate::decoder::{Decoder, Stats};
 use crate::gate::Gate;
@@ -22,8 +22,8 @@ pub struct Receiver<M: MendModel, P: PostModel> {
 
 impl<M: MendModel, P: PostModel> Receiver<M, P> {
     pub fn new(p: &Profile, mend: M, post: P) -> Result<Receiver<M, P>, String> {
-        if p.bits_s.iter().all(|&v| v == 0) || p.block != NC {
-            return Err(format!("{}: MendNet と PostNet は M・S の 2 成分、ブロック長 64 のプロファイル用です", p.name));
+        if p.block != NC {
+            return Err(format!("{}: MendNet と PostNet はブロック長 64 のプロファイル用です", p.name));
         }
         let dec = Decoder::new(p)?;
         let mender = Mender::new(&dec.lay, mend);
@@ -44,7 +44,7 @@ impl<M: MendModel, P: PostModel> Receiver<M, P> {
     pub fn finish(&mut self) -> Result<Vec<[f64; 2]>, String> {
         match self.mender.finish()? {
             Some(m) => self.emit(m),
-            None => Ok(Vec::new()),
+            None => self.post.push(Vec::new(), &[]),
         }
     }
 

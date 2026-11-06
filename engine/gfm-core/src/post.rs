@@ -2,6 +2,7 @@
 //! PostNet は段ごとに過去の入力を持ち越して逐次に回す（`tools/export_onnx.py` の postnet.onnx）。MDCT のフレーム f は波形 [256(f−1), 256(f+1))、
 //! フレーム [4f − 4, 4f + 4) にかかる。波形の合成には前後 REACH フレームの係数も要る。PostNet の出力のフレーム f は、MDCT のフレーム f + LOOKAHEAD までを見る。
 //! 確定したフレームだけで決まる位置まで状態を進め、その先（暫定のフレームに頼る部分）は毎回計算し直す。
+//! フレームの末尾の標本には次のフレームの係数が届くので、音声は確定したフレームより REACH フレーム手前まで出す。
 //! 全体を一度に通したのと同じ出力になる（先読みが暫定値のぶんを除く）。
 
 use std::collections::VecDeque;
@@ -70,17 +71,18 @@ impl<P: PostModel> PostFilter<P> {
         PostFilter { model, dims, cache, yprev: vec![0.0; 2 * BINS], k: 0, hist: VecDeque::new(), start: 0, done: 0 }
     }
 
-    /// 確定したフレーム fin（判定つき）を音声（L/R、満点 ±1、fin.len() × 64 サンプル）にする。ahead: その後ろの暫定のフレーム（判定は fin の最後と同じとする）。
-    /// ストリームの終わりは ahead を空にする（後ろは無音）
+    /// 確定したフレーム fin（判定つき）を足して、出せるようになった音声（L/R、満点 ±1）を返す。ahead: その後ろの暫定のフレーム（判定は確定の最後と同じとする）。
+    /// ストリームの終わりは ahead を空にする（後ろは無音で、残りの音声を全部出す）
     pub fn push(&mut self, fin: Vec<(Restored, bool)>, ahead: &[Restored]) -> Result<Vec<[f64; 2]>, String> {
-        if fin.is_empty() {
-            return Ok(Vec::new());
-        }
-        let last_on = fin[fin.len() - 1].1;
         self.hist.extend(fin);
         let (k, c) = (self.k, self.start + self.hist.len());
-        // 音声 [64·done, 64·c) を出すのに要る MDCT のフレーム [k, e)
-        let e = c.div_ceil(MDCT_HOP) + LOOKAHEAD + 1;
+        let to = if ahead.is_empty() { c } else { c.saturating_sub(REACH) };
+        if to <= self.done {
+            return Ok(Vec::new());
+        }
+        let last_on = self.hist.back().is_none_or(|h| h.1);
+        // 音声 [64·done, 64·to) を出すのに要る MDCT のフレーム [k, e)
+        let e = to.div_ceil(MDCT_HOP) + LOOKAHEAD + 1;
         let (f, l) = (e - k, e - k - LOOKAHEAD);
         let n = MDCT_HOP * (f + 1) + 2 * REACH;
         let (mut e0, mut sd) = (vec![0f32; 2 * n * NC], vec![0f32; 2 * n * NC]);
@@ -107,12 +109,13 @@ impl<P: PostModel> PostFilter<P> {
         // MDCT のフレーム k + j の判定: かかる フレーム（この歩の [REACH + 4j, REACH + 4j + 8)）が全部オン
         let on: Vec<f32> = (0..l).map(|j| gate[REACH + MDCT_HOP * j..REACH + MDCT_HOP * (j + 2)].iter().all(|&x| x) as u8 as f32).collect();
         let out = self.model.step(&PostInput { e0: &e0, sd: &sd, frames: f, on: &on, yprev: &self.yprev, cache: &self.cache })?;
-        // 音声 [256(k − 1), …) から、[64·done, 64·c) を採る
+        // 音声 [256(k − 1), …) から、[64·done, 64·to) を採る
         let (len, off) = (l * BINS, BINS * k);
-        let pcm = (NC * self.done + BINS - off..NC * c + BINS - off)
+        let pcm = (NC * self.done + BINS - off..NC * to + BINS - off)
             .map(|i| [(out.audio[i] + out.audio[len + i]) as f64, (out.audio[i] - out.audio[len + i]) as f64])
             .collect();
         self.commit(c, &out);
+        self.done = to;
         Ok(pcm)
     }
 
@@ -137,6 +140,5 @@ impl<P: PostModel> PostFilter<P> {
         self.hist.drain(..start - self.start);
         self.start = start;
         self.k = k2;
-        self.done = c;
     }
 }

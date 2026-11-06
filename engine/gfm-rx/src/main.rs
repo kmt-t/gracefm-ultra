@@ -217,7 +217,7 @@ fn main() {
         at(0.5) * 1e3,
         at(0.99) * 1e3,
         worst * 1e3,
-        (DELAY as f64 * frame + worst) * 1e3,
+        ((DELAY + REACH) as f64 * frame + worst) * 1e3,
         peak_rss_mb()
     );
 }

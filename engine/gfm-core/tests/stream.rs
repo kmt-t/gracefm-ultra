@@ -77,7 +77,9 @@ fn post_filter_output_matches_the_input_frames() {
         let ahead: Vec<Restored> = (done + len..done + len + 25).map(r).collect();
         out.extend(pf.push(fin, &ahead).unwrap());
         done += len;
+        assert_eq!(out.len(), (done - REACH) * NC, "末尾の標本には、まだ暫定の次のフレームが届く");
     }
+    out.extend(pf.push(Vec::new(), &[]).unwrap());
     assert_eq!(out.len(), done * NC);
     for (s, v) in out.iter().enumerate() {
         let i = (s / NC) as f64;
