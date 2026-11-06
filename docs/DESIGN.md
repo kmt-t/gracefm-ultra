@@ -1,51 +1,78 @@
-# 送受信の対称な設計
+# 受信機の設計（Rust、`engine/gfm-core`）
 
-GraceFM のビット列・フレーム形式は変えない。Rust の実装（`engine/gfm-core`）は、本家 Python（`../gracefm`）のモジュール構成に合わせ、送信と受信が鏡になる。
+GraceFM のビット列・フレーム形式は変えない。送信は本家 Python（`../gracefm`）と鏡になる構成で、受信は復号のあとに MendNet と PostNet を置く。
 
-- **音声の符号化と受信は浮動小数点（f64）**: DSP では動かさず、音質を優先する。本家の整数の演算幅の仕様（乗算器 25×18 bit など）は持ち込まない。したがって本家とはビット単位では一致しない。
-- **ビット配置・FEC・CRC・スクランブルはビット処理**: 本家とビット単位で同じ。形式への準拠は、Rust の送信を本家 Python の受信で復号する試験（`tools/test_rs_compat.py`）で確かめる。
+- **音声の符号化と受信は浮動小数点**: DSP では動かさず、音質を優先する。本家の整数の演算幅の仕様は持ち込まないので、本家とはビット単位では一致しない。
+- **ビット配置・FEC・CRC・スクランブルはビット処理**: 本家とビット単位で同じ。Rust の送信を本家 Python の受信で復号する試験（`tools/test_rs_compat.py`）で確かめる。
+- **網は ONNX**: 入力の特徴づくりと出力の後処理もグラフに入れる（`tools/export_onnx.py`）。Rust は観測と状態を並べて渡すだけ。
 
-## 処理の対
+## 受信の流れ
+
+フレームを 1 つずつ入れる。各段は、次の段に渡すものだけを出す。
+
+```
+シンボル ─▶ Decoder ─DecodedFrame─▶ Observation ─▶ Mender ─Mended─▶ Gate ─(Restored, 判定)─▶ PostFilter ─▶ 音声 L/R
+            復号                     網の入力の符号化   MendNet          判定             PostNet
+```
+
+| 段 | 型 | 受け持つこと | 出すもの |
+|---|---|---|---|
+| 復号 | `decoder::Decoder` | 復調、スクランブル解除、ヘッダ（事前知識つき、通らなければリスト復号）、FEC、軟判定の逆量子化。直前までのヘッダを覚える | `DecodedFrame`: 状態、帯域係数、帯域ごとの誤差分散、仮数ビットの受信 LLR、ヘッダ、gap、壊れたフレームの手がかり |
+| 観測 | `restore::Observation` | MendNet の入力の定義どおりに符号化する（LLR の量子化、刻み、情報なしは −1） | 1 フレームの観測 |
+| 補間 | `restore::Mender` | 直近 100 フレームの窓を 50 フレームごとに MendNet にかけ、中央 50 フレームを確定する（最初の窓は先頭から） | `Mended`: 確定したフレーム（e0、sd、元が使えたか）と、窓の残りの暫定のフレーム |
+| 判定 | `gate::Gate` | 過去 1 秒の、使えたフレームの e0 の二乗和 / sd の二乗和（予測の SNR）。27.5 dB 以上でオン、オンの間は 25.5 dB を下回るまでオン | フレームごとの判定 |
+| 後段 | `post::PostFilter` | PostNet を段ごとの状態を持ち越して逐次に回す。確定したフレームだけで決まる位置まで状態を進め、暫定のフレームに頼る先読みの部分は毎回計算し直す | 音声（L/R、満点 ±1） |
+| 受信 | `receiver::Receiver` | 上をフレームごとにつなぐ。超解像をかけた割合と切り替えの回数を数える | 音声 |
+
+網の推論は `restore::MendModel` と `post::PostModel` に任せる。`gfm-rx` が ONNX Runtime で実装し、試験（`tests/stream.rs`）は入力をそのまま返す模型で窓と区間の受け渡しを確かめる。
+
+### 遅延
+
+- 補間の確定待ち: 窓 [a, a + 100) はフレーム a + 99 が届いた時点で、[a + 25, a + 75) を確定する。最も待つフレームは 75 フレーム（150 ms）。
+- 後段の先読み（MDCT 2 フレーム + 窓の重なり、最大 15 Haar フレーム）は、補間の窓の残り（25 フレーム）の暫定値で賄うので、待ちは増えない。
+- 計算: 50 フレームごとに MendNet 1 回（窓 1 つ × M・S）と PostNet 1 歩。
+- 合計は、150 ms + 1 回の計算の時間。`gfm-rx` が実測を出す（`latency`）。
+
+### 一致
+
+- 後段の逐次処理は、全体を一度に通したものと一致する（`tools/export_onnx.py` の検証で −129 dB）。
+- 受信全体（`gfm-rx`）は、Python の MendNet + PostNet（全体を一度に処理）と、原音比 −60 dB 未満の差で一致する（`tools/test_rx_onnx.py`）。差は、後段の先読みに補間の暫定値を使うぶんと、ストリームの末尾の扱い。
+
+## 送信と復号の対
 
 | 段 | 送信 | 受信 | 入出力 |
 |---|---|---|---|
-| 変換 | `analyze` | `synthesize` | PCM ブロック ⇄ 帯域係数 `[成分 M/S][帯域 k][係数 j]`（M/S 分離と Haar をまとめる） |
-| 量子化 | `quantize`（`quantize_band`） | `soft_coeffs` | 帯域係数 ⇄ `BlockData`（仮数・指数・アッテネータ）。受信は軟判定で、係数と誤差分散を返す |
-| フレーム化 | `pack` | `unpack` | `BlockData` ⇄ 送信ビット列（ヘッダ、FEC、CRC、配置は `Layout`）。どちらも純粋な関数。Chase 救済は受信側の方針（`unpack_recovering`） |
+| 変換 | `analyze` | `synthesize` | PCM ブロック ⇄ 帯域係数 `[成分 M/S][帯域 k][係数 j]`（M/S 分離と Haar をまとめる。受信の合成は PostNet のグラフの中） |
+| 量子化 | `quantize`（`quantize_band`） | `soft_coeffs` | 帯域係数 ⇄ `BlockData`（仮数・指数・アッテネータ）。受信は軟判定で、係数と帯域ごとの誤差分散を返す |
+| フレーム化 | `pack` | `unpack` | `BlockData` ⇄ 送信ビット列（ヘッダ、FEC、CRC、配置は `Layout`）。どちらも純粋な関数 |
 | スクランブル | `scramble` | `descramble` | ビット ⇄ （LLR, 硬判定）。同じ PRBS |
 | 変調 | `modulate` | `demodulate` | ビット ⇄ シンボル（受信は LLR・硬判定・雑音分散） |
-| フレーム | `Encoder::frame` | `Decoder::decode_frame` | PCM ブロック ⇄ シンボル（受信は欠落を `None` で受ける） |
-| ストリーム | `Encoder::run` | `Decoder::run` | 全体の時刻合わせ（遅延 `offset`）を両側で同じ契約にする |
-
-受信にだけある段（送信に対応なし）: 2 系統の融合（逆分散重み）、欠落補間（PLC）、クロスフェード、出力 IIR 切替（真の Butterworth、4 次、4 kHz）。欠落補間は **MendNet（DNN）が本番**（聴感のため）。いまの Rust の LPC 外挿は、MendNet（ONNX）を載せるまでの暫定で、載せたら削除する。`receiver` に分け、フレームの復号とは別の「出力段」とする。
-
-## 型
-
-- `BlockData`: 量子化後の 1 ブロック（`quantize` の出力、`pack` の入力、`unpack` の出力、`dequantize` の入力）。
-- `Unpacked`: `unpack` の出力。`BlockData`、`high_ok`、FEC で訂正した保護ビット（`protected_bits`）。
-- `DecodedFrame`: `decode_frame` の出力。PCM（満点 ±1）、状態 `Status`（Ok / HighFail / Lost / CrcFail）、品質コード、誤差分散 `rb`。`valid()` は基本 CRC が通ったか。副作用で持たず、戻り値で返す。
-- `StreamResult`: `Decoder::run` の出力。時刻合わせ済みの PCM・有効フラグ・誤差分散と、フレームごとの品質コード、統計。
+| フレーム | `Encoder::frame` | `Decoder::push` | PCM ブロック ⇄ シンボル（受信は欠落を `None` で受ける） |
 
 ## 受信の浮動小数点の中身
 
 - LLR は自然対数の最大対数近似 `(D1 - D0) / (2σ²)`、σ² は最寄りの信号点との差から。ビタビの経路メトリックも浮動小数点。
-- 仮数の各ビットが 1 である確率 p1 は厳密な sigmoid。FEC で訂正した保護ビットは確定値（0 か 1）。係数は期待値、誤差分散は `Σ p1(1-p1)·4^pos + 1/12`（刻みの二乗倍）。
-- 逆 Haar は直交（1/√2）。L = M + S、R = M - S。
-- 2 系統の融合は、帯域ごと・半ブロックごとに w_A = R_B / (R_A + R_B)。情報なしは 0 / 1 / 1/2。
-- 欠落補間は、いまは暫定のハン窓つき LPC（16 次）の外挿（倍精度）。本番は MendNet（DNN）。出力 IIR は真の Butterworth（4 次、4 kHz）。
+- ヘッダは、まず最尤（ビタビ）で基本 CRC を確かめ、通らなければ尤度の高い順の候補（リストビタビ、8 候補）から最初に通るものを採る。
+- 仮数の各ビットが 1 である確率 p1 は厳密な sigmoid。FEC で訂正した保護ビットは確定値（0 か 1）。係数は期待値、誤差分散は `Σ p1(1-p1)·4^pos + 1/12`（刻みの二乗倍）の帯域平均。
+- MendNet の入力の受信 LLR は、自然対数の 4 倍を丸めて ±127 に飽和（学習データと同じ）。
+- 逆 Haar は直交（1/√2）。L = M + S、R = M − S。
 
-## Rust のモジュール
+## モジュール
 
 ```
 codec/transform.rs   analyze / synthesize、Haar
 codec/quant.rs       quantize_band / quantize、BlockData
-framing.rs           pack / unpack / unpack_recovering / coefficient_bits
-fec.rs               rsc_parity、CRC（送信）、ビタビ（受信）
+framing.rs           pack / unpack / coefficient_bits
+fec.rs               rsc_parity、CRC（送信）、ビタビ・リストビタビ（受信）
 scrambler.rs         scramble / descramble
 modem.rs             modulate / demodulate
+prior.rs             ヘッダの事前知識（Tracker）
 encoder.rs           Encoder
-decoder.rs           Decoder、soft_coeffs、reconstruct
-fusion.rs plc.rs iir.rs receiver.rs   出力段（fuse_band、conceal、apply_alt、output_stage、receive）
+decoder.rs           Decoder、soft_coeffs、block_steps
+restore.rs           Observation、Mender（MendNet）
+gate.rs              Gate（超解像の判定）
+post.rs              PostFilter（PostNet）
+receiver.rs          Receiver（受信の流れ）
 channel.rs           通信路（Rayleigh、欠落、AWGN、12 bit ADC）
-gen.rs               学習データ生成（Encoder と通信路）
+dataset.rs           MendNet の学習データ生成（Encoder、通信路、Decoder、Observation）
 ```

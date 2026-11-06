@@ -1,5 +1,5 @@
 //! 受信: フレームのシンボル → 帯域係数と、その確からしさ（浮動小数点）。GraceFM `gracefm/decoder.py` に相当（Y 方式と暗号化は未対応）。
-//! decode_frame = demodulate → descramble → unpack（Chase 救済つき）→ soft_coeffs（軟判定の逆量子化）。エンコーダ（encoder.rs）の鏡。
+//! decode_frame = demodulate → descramble → unpack（ヘッダは事前知識つき、通らなければリスト復号）→ soft_coeffs（軟判定の逆量子化）。エンコーダ（encoder.rs）の鏡。
 //! 音声への合成と、欠落・誤りの補正は下流（receiver.rs）。信号の尺度は満点 ±1。
 
 use crate::codec::exp_range;
@@ -33,6 +33,7 @@ pub struct Stats {
     pub lost: usize,
     pub crc_fail: usize,
     pub high_crc_fail: usize,
+    /// ヘッダを、最尤でない候補（リスト復号）で採ったフレームの数
     pub recovered: usize,
 }
 
