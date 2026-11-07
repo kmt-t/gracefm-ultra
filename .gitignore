@@ -9,4 +9,6 @@ runs/
 *.pt
 *.npz
 *.onnx
+!engine/models/B200/*.onnx
+!engine/models/B200-L/*.onnx
 engine/target/

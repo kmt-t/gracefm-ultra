@@ -41,5 +41,5 @@ gfm-gen --profile B200-L --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1
 ## 対応範囲
 
 - プロファイル: B200、B200M、B200Y、B200MY、M700、M700M、M700Y、M700MY、SUB100、SUB50M、SUB100-48K と、それぞれの `-L`（LeGall 5/3）の全 22。本家と同じく、Haar と `-L` は pid とビット配置が同じで format_id で区別する
-- 受信は 1 系統。モデルが要る（`models/<プロファイル>/`）。モデルはリポジトリに入れないので、`tools/train_profile.py` で学習する
+- 受信は 1 系統。モデルが要る（`models/<プロファイル>/`）。リポジトリに入っているのは B200 と B200-L で、ほかは `tools/train_profile.py` で学習する
 - 未対応: 暗号化、RTL-SDR の I/Q からの同期（等化器とタイミング同期）
