@@ -32,7 +32,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm.profiles import PROFILES  # noqa: E402
 from gracefm_ultra.transform import REACH  # noqa: E402
-from gracefm_ultra.mendnet import Q22, WIN, bit_index, bits_out, build_input_bits, make_meta, step_of  # noqa: E402
+from gracefm_ultra.mendnet import Q22, WIN, bit_index, bits_out, build_input_bits, limit_e0, make_meta, step_of  # noqa: E402
 from gracefm_ultra.postnet import A_MAX, LOOKAHEAD, M, Transform, features  # noqa: E402
 from eval_mendnet import load as load_mend  # noqa: E402
 from eval_post import load as load_post  # noqa: E402
@@ -61,7 +61,7 @@ class MendGraph(nn.Module):
         m = torch.maximum(torch.minimum(m, self.qmax[comp][:, None]), self.qmin[comp][:, None])
         v = torch.bmm(p1 * (1 - p1), self.W2[comp]) + 1.0 / 12
         step = step_of(st) / Q22
-        return m * step, v.sqrt() * step * self.sent[comp][:, None]
+        return limit_e0(m * step, v.sqrt() * step * self.sent[comp][:, None], coef, status)
 
 
 def widths(net):

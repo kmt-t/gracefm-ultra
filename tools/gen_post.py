@@ -47,7 +47,7 @@ def restore(win, sc, net, meta, chunk=64):
         per = [win.gather(locs, [ch] * len(locs)) for ch in range(2)]
         with torch.no_grad():
             llr, step = run_both(net, per, win.bit_idx.to(win.device), win.bit_ok.to(win.device), meta.nbit)
-            m, s = soft_e0(llr, step, meta)
+            m, s = soft_e0(llr, step, meta, torch.cat([b["coef"] for b in per], 2), per[0]["status"].long())
         m, s = (m / Q22).cpu().numpy(), (s / Q22).cpu().numpy()
         for j, (_, _, a) in enumerate(locs):
             lo = 0 if a == 0 else WIN // 4

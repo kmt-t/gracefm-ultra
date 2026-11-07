@@ -3,6 +3,7 @@
 Rust の受信 (engine/gfm-rx: Decoder → MendNet → 判定 → PostNet、ONNX Runtime) が、Python の MendNet と PostNet (PyTorch) と同じ音を出すこと。
 同じ seed・シナリオの gfm-tx (シンボル) と gfm-gen --mend (MendNet の入力) は同じ通信路の実現になるので、両方の出力を比べる。
 基準: 両者の差が、原音に対して -60 dB 未満 (Rust は逐次処理で、後段の先読みに補間の暫定値を使うぶん、わずかに違う)。
+長い欠落 (窓より長い) でも大きな音を出さないこと (音源のピークは 0.5 前後なので、1 未満)。このときは無音に切り替わる窓の境界で暫定値と確定値が大きく違うので、差の基準は -50 dB。
 
   .venv/bin/python tools/test_rx_onnx.py --mend runs/mendnet_B200-L.pt --post runs/post_B200-L.pt
 """
@@ -34,6 +35,15 @@ def ort_lib():
     return sorted(_glob.glob(os.path.join(os.path.dirname(onnxruntime.__file__), "capi", "libonnxruntime.so.*")))[0]
 
 
+def longest_run(m):
+    """bool の並びの、True の最長の連続"""
+    best = run = 0
+    for v in m:
+        run = run + 1 if v else 0
+        best = max(best, run)
+    return best
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mend", required=True)
@@ -46,7 +56,7 @@ def main():
     models = a.models or os.path.join(HERE, "..", "engine", "models", a.profile)
     x = rs.clip(p, seconds=6.0)
     ok = True
-    for scen in ((24.0, 0, 0.05, 3.0), (14.0, 1, 0.1, 4.0)):
+    for scen, limit in (((24.0, 0, 0.05, 3.0), -60), ((14.0, 1, 0.1, 4.0), -60), ((30.0, 0, 0.25, 150.0), -50)):
         with tempfile.TemporaryDirectory() as d:
             raw, npz, sym, out = (os.path.join(d, v) for v in ("x.raw", "m.npz", "a.sym", "o.raw"))
             rs.write_pcm(raw, x)
@@ -69,7 +79,9 @@ def main():
         snr = lambda y: 10 * np.log10((ref ** 2).sum() / ((y - ref) ** 2).sum())  # noqa: E731
         print(f"scen {s}: Rust と Python の差 {diff:+.1f} dB (原音比)、SNR Rust {snr(y_rs[:n]):+.2f} / Python {snr(y_py):+.2f} dB、"
               f"判定オン Python {g.mean():.3f}\n  {r.stderr.strip()}")
-        ok &= diff < -60
+        peak = np.abs(y_rs).max()
+        print(f"  ピーク {peak:.3f}、最長の欠落 {longest_run(z['status'][0] == 3)} フレーム")
+        ok &= diff < limit and peak < 1.0
     print("OK" if ok else "NG")
     sys.exit(0 if ok else 1)
 

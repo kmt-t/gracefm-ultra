@@ -84,6 +84,9 @@ def bit_index(coef_of_bit):
     return idx, ok
 
 
+COEF_MAX = 2.0                                                               # 係数の上限（満点 1.0。高域の係数は差分なので 2 まで）
+
+
 def step_feature(dstep):
     """刻み (…, 64)（0 = 不明）→ (特徴 (…, 64)、既知 (…, 64) float)"""
     known = dstep > 0
@@ -200,10 +203,20 @@ def make_meta(npz, profile):
     return Meta(npz["pos"], npz["coef_of_bit"], offs, qmin, qmax)
 
 
-def soft_e0(llr, step, meta):
-    """llr: (B, T, nbit) 整数 LLR (正 = bit 0)、step: (B, T, ncoef) → 事後平均 E0、標準偏差 (係数の単位)"""
+def limit_e0(e0, sd, coef, status):
+    """網の外れ値を抑える（満点 1.0 の尺度）。欠落フレーム (status 3) の係数と標準偏差は、窓の中の使えるフレームの同じ係数の最大値まで。
+    窓が全部欠落なら 0（無音）になる。e0, sd, coef (B, T, C)、status (B, T)"""
+    lim = (coef.abs() * (status <= 1)[:, :, None]).amax(1, keepdim=True).expand_as(e0)
+    lost = (status == 3)[:, :, None]
+    cap = torch.where(lost, lim, torch.full_like(lim, COEF_MAX))
+    return torch.minimum(torch.maximum(e0, -cap), cap), torch.minimum(sd, cap)
+
+
+def soft_e0(llr, step, meta, coef, status):
+    """llr: (B, T, nbit) 整数 LLR (正 = bit 0)、step: (B, T, ncoef)、coef: 復号した係数 (B, T, ncoef)、status (B, T) → 事後平均 E0、標準偏差 (step の尺度)"""
     p1 = torch.sigmoid(-llr / LLR_SCALE)
     m = (p1 @ meta.W) - meta.offset
     m = torch.maximum(torch.minimum(m, meta.qmax), meta.qmin)
     v = (p1 * (1 - p1)) @ meta.W2 + 1.0 / 12
-    return m * step, v.sqrt() * step * (meta.qmax > 0)                       # 送らない帯域は誤差もない
+    e0, sd = limit_e0(m * step / Q22, v.sqrt() * step / Q22 * (meta.qmax > 0), coef, status)                    # 送らない帯域は誤差もない
+    return e0 * Q22, sd * Q22

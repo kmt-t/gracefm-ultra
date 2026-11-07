@@ -57,7 +57,7 @@ def coefs(win, locs, net, meta):
     per = [win.gather(locs, [ch] * len(locs)) for ch in range(2)]
     with torch.no_grad():
         llr, step = run_both(net, per, win.bit_idx.to(win.device), win.bit_ok.to(win.device), meta.nbit)
-        e0, sd = soft_e0(llr, step, meta)
+        e0, sd = soft_e0(llr, step, meta, torch.cat([b["coef"] for b in per], 2), per[0]["status"].long())
     cat = lambda k: torch.cat([per[0][k], per[1][k]], -1)  # noqa: E731
     out = {"復号のまま": cat("coef"), "MendNet": e0 / Q22}
     return {k: v.cpu().numpy() for k, v in out.items()}, (sd / Q22).cpu().numpy(), per[0]["status"].cpu().numpy(), cat("target").cpu().numpy()
