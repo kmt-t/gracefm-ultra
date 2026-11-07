@@ -1,9 +1,9 @@
-"""使ってよい CPU コア。環境変数 ULTRA_CPUS（既定 0,1,5,6,7,11）。他のプロジェクトと共有するマシンなので、重い処理は必ず pin() で収める。"""
+"""使ってよい CPU コア。環境変数 ULTRA_CPUS（既定 0,1,5,6,7,11）のうち、このマシンにあるもの。他のプロジェクトと共有するマシンなので、重い処理は必ず pin() で収める。"""
 import os
 
 from threadpoolctl import threadpool_limits
 
-CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")}
+CPUS = {int(v) for v in os.environ.get("ULTRA_CPUS", "0,1,5,6,7,11").split(",")} & os.sched_getaffinity(0)
 
 
 def pin(cpus=None):

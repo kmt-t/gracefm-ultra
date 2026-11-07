@@ -1,0 +1,1252 @@
+{
+ "train_lossless": [
+  {
+   "file": "C418_-_Bushes_and_Marshmallows_-_02_Incredible.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_Bushes_and_Marshmallows_-_02_Incredible.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "d6c03b5e8273cd32ec96bf352fb78d6421330513"
+  },
+  {
+   "file": "C418_-_Bushes_and_Marshmallows_-_04_Question.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_Bushes_and_Marshmallows_-_04_Question.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "08c3d271e2fe822f41a33b508965ce87e8ed098c"
+  },
+  {
+   "file": "C418_-_Bushes_and_Marshmallows_-_07_Phaos.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_Bushes_and_Marshmallows_-_07_Phaos.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "e0e330677ba59d17b59f2a498a97dde5db9b5d51"
+  },
+  {
+   "file": "C418_-_Mixes_-_01_20_kids.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_Mixes_-_01_20_kids.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "676f29775f8126bd7cb10743980d4be2ec768ad8"
+  },
+  {
+   "file": "C418_-_Mixes_-_03_Incredibly_detailed_acid_trip.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_Mixes_-_03_Incredibly_detailed_acid_trip.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "43b315108c2d38c3d708996bc61c4568992a053f"
+  },
+  {
+   "file": "C418_-_bps_-_01_aeiouw.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_bps_-_01_aeiouw.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "8c1d3a9dd5c85bfcb8a8450166342b7ea9321460"
+  },
+  {
+   "file": "C418_-_sine_-_01_test.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:C418_-_sine_-_01_test.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "5320329c7bf3aedb38b4938a16a4bd8f9dc801d4"
+  },
+  {
+   "file": "Cloudkicker_-_Let_Yourself_Be_Huge.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Cloudkicker_-_Let_Yourself_Be_Huge.flac",
+   "artist": "Cloudkicker (Ben Sharp)",
+   "license": "CC BY 3.0",
+   "sha1": "5d06e0d9fa02e6ffafd9fce525b329756c96c8ae"
+  },
+  {
+   "file": "Eternity_from_Light_Years_by_Stellardrone.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Eternity_from_Light_Years_by_Stellardrone.flac",
+   "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://stellardrone.bandcamp.com/\">Stellardrone</a>",
+   "license": "CC BY 3.0",
+   "sha1": "77d13f5db7fb28a56bb29a121766978f9e55fe4f"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_1.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:HOME_-_Resting_State_-_1.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "0462068a2afbb843a6f3a740ff16315d0e3d5e66"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_12.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:HOME_-_Resting_State_-_12.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "ba63e33219974520a5dfd23fdb573e1ed983e38b"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_15.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:HOME_-_Resting_State_-_15.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "c03e44e57228c56a8c984db5a131d49f52de4eae"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_21.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:HOME_-_Resting_State_-_21.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "f3940ab2bd9e67ac2da00f1ea5fdad5a7921f3cb"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_23.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:HOME_-_Resting_State_-_23.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "b244b4671c8197da2cb9c3282cb8a42521d4bc87"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_29.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:HOME_-_Resting_State_-_29.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "f8878dd8bb87ff22f82cf530dc82f5bc066ad2ae"
+  },
+  {
+   "file": "Parallel_-_me_time.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Parallel_-_me_time.flac",
+   "artist": "Parallel",
+   "license": "CC BY 3.0",
+   "sha1": "0d6713f39a2e6ff55875bf309972c9ed3b0772f4"
+  },
+  {
+   "file": "Petscop_Soundtrack_-_16_explore.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Petscop_Soundtrack_-_16_explore.flac",
+   "artist": "Tony Domenico as “Rainer”",
+   "license": "CC BY 4.0",
+   "sha1": "840bf74f39b12daceb5e939eb271ab0387ee82e3"
+  },
+  {
+   "file": "Raspberrymusic_-_Aliens_(trailer_music;_cinematic_epic_electronic_classical_music).flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Raspberrymusic_-_Aliens_(trailer_music;_cinematic_epic_electronic_classical_music).flac",
+   "artist": "raspberrymusic",
+   "license": "CC BY 3.0",
+   "sha1": "b52bf683cd051a7cbb93f1fbff30a8d349daab44"
+  },
+  {
+   "file": "Raspberrymusic_-_Ambient_(10_minutes).flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Raspberrymusic_-_Ambient_(10_minutes).flac",
+   "artist": "raspberrymusic",
+   "license": "CC BY 3.0",
+   "sha1": "0ed4cac3f32b2c67f2283e3f00a2649c9864bf0c"
+  },
+  {
+   "file": "Raspberrymusic_-_Epic_Trailer_Dramatic.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Raspberrymusic_-_Epic_Trailer_Dramatic.flac",
+   "artist": "raspberrymusic",
+   "license": "CC BY 3.0",
+   "sha1": "5385ec5261fabff8578886bf025723cedb259a39"
+  },
+  {
+   "file": "Resonant_Bodies_-_Resonant_Bodies_I_-_03_Abundant_Decay.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Resonant_Bodies_-_Resonant_Bodies_I_-_03_Abundant_Decay.flac",
+   "artist": "Resonant Bodies",
+   "license": "CC BY 3.0",
+   "sha1": "bc26bfbba7dc7a00e6d4adfc0054d54619cb4b52"
+  },
+  {
+   "file": "Resonant_Bodies_-_Resonant_Bodies_I_-_05_Grain_of_Wood,_Crumbling_Castle.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Resonant_Bodies_-_Resonant_Bodies_I_-_05_Grain_of_Wood,_Crumbling_Castle.flac",
+   "artist": "Resonant Bodies",
+   "license": "CC BY 3.0",
+   "sha1": "3f8db6328fbff56ffab5d49ccbfbf21478a67157"
+  },
+  {
+   "file": "Resonant_Bodies_-_Resonant_Bodies_I_-_07_Derelict_Bow.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Resonant_Bodies_-_Resonant_Bodies_I_-_07_Derelict_Bow.flac",
+   "artist": "Resonant Bodies",
+   "license": "CC BY 3.0",
+   "sha1": "c042503a6dff9956e06b06b08c21391390574307"
+  },
+  {
+   "file": "Sillycat_Shore.wav",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Sillycat_Shore.wav",
+   "artist": "SkyTheFloof",
+   "license": "CC0 1.0",
+   "sha1": "74452d13d28837936adce6fae1168961220067a0"
+  },
+  {
+   "file": "Snowmelt_flowing_into_lake_at_Okanagan_Mountain_Provincial_Park.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Snowmelt_flowing_into_lake_at_Okanagan_Mountain_Provincial_Park.flac",
+   "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Extemporalist\" title=\"User:Extemporalist\">Extemporalist</a>",
+   "license": "CC0 1.0",
+   "sha1": "36c135f76ec9b7f47a19f04c88344740235ec07f"
+  },
+  {
+   "file": "Tamaki_Tso_-_La_Silla_-_01_Interstellar.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Tamaki_Tso_-_La_Silla_-_01_Interstellar.flac",
+   "artist": "Tamaki Tso",
+   "license": "CC BY 3.0",
+   "sha1": "5800b565915f8b8c01ff02f41cc278edba0c6a8f"
+  },
+  {
+   "file": "Urban_Street_on_a_Rainy_Afternoon.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File:Urban_Street_on_a_Rainy_Afternoon.flac",
+   "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Extemporalist\" title=\"User:Extemporalist\">Extemporalist</a>",
+   "license": "CC0 1.0",
+   "sha1": "201dc60eddfaa2c63c0a241342d7f7a0831e27b9"
+  }
+ ],
+ "commons": [
+  {
+   "file": "03_Mozart_KV_421_2.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A03_Mozart_KV_421_2.flac",
+   "artist": "Max STRUB QUARTETT",
+   "license": "Public domain",
+   "sha1": "818e6103ea694dbff33c5a85884af409187a186e"
+  },
+  {
+   "file": "06_-_Wasserfluth_CK_2951-2_ES_384_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A06_-_Wasserfluth_%28CK_2951-2%2C_ES_384%29.flac",
+   "artist": "Schubert, 1827",
+   "license": "Public domain",
+   "sha1": "a57e62ee0488e0ec2a1c59d72c94db42ff8a580c"
+  },
+  {
+   "file": "0music_02_Melomics.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A0music_02_Melomics.flac",
+   "artist": "Melomics109 (computer system)",
+   "license": "Public domain",
+   "sha1": "f62c74d3a108a9d69a452450db0da8e3ca10c2be"
+  },
+  {
+   "file": "0music_03_Melomics.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A0music_03_Melomics.flac",
+   "artist": "Melomics109 (computer system)",
+   "license": "Public domain",
+   "sha1": "1f15e9af99b97e3a374827d18a1ca641fa5e674c"
+  },
+  {
+   "file": "0music_11_Melomics.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A0music_11_Melomics.flac",
+   "artist": "Melomics109 (computer system)",
+   "license": "Public domain",
+   "sha1": "21f535afde754f5381bf195414a689be2ba0c795"
+  },
+  {
+   "file": "0music_12_Melomics.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A0music_12_Melomics.flac",
+   "artist": "Melomics109 (computer system)",
+   "license": "Public domain",
+   "sha1": "0281ad40d4404158f5daa7d61ec5564b2b6afc41"
+  },
+  {
+   "file": "3_Ya_ashiqin.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A3_Ya_%27ashiqin.flac",
+   "artist": "Carl Davila",
+   "license": "CC BY 4.0",
+   "sha1": "144dee33d64399658fb1dc126cf791801e890835"
+  },
+  {
+   "file": "Aleksander_Läte_-_Tütre_tänu_Jenny_Siimon_Elsa_Avesson_1937_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AAleksander_L%C3%A4te_-_T%C3%BCtre_t%C3%A4nu_%28Jenny_Siimon%2C_Elsa_Avesson%2C_1937%29.flac",
+   "artist": "Aleksander Läte, Jenny Siimon, Elsa Avesson",
+   "license": "Public domain",
+   "sha1": "534dd41b2ee7f6bdd8afbc28ddc51c8dde078b86"
+  },
+  {
+   "file": "Autumn_in_Sweden.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AAutumn_in_Sweden.flac",
+   "artist": "Nenne Larson",
+   "license": "CC BY 4.0",
+   "sha1": "92254d7c88dd6394df57ea29ede8250253c3af03"
+  },
+  {
+   "file": "Bach_J_S_-_Goldberg_Variations_BWV988_-_16._Variation_15._Canon_on_the_fifth_Shelley_Katz_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ABach%2C_J_S_-_Goldberg_Variations%2C_BWV988_-_16._Variation_15._Canon_on_the_fifth_%28Shelley_Katz%29.flac",
+   "artist": "Johann Sebastian Bach",
+   "license": "Public domain",
+   "sha1": "ea4bc1e5a7046389df10c5c883c7fdd5680ee04f"
+  },
+  {
+   "file": "Bow_Down_to_Washington_Vic_Meyers_and_His_Hotel_Butler_Orchestra.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ABow_Down_to_Washington_%E2%80%94_Vic_Meyers_and_His_Hotel_Butler_Orchestra.flac",
+   "artist": "Vic Meyers and His Hotel Butler Orchestra",
+   "license": "Public domain",
+   "sha1": "7e9daca32de62580435a2233105c63011c8d1f17"
+  },
+  {
+   "file": "Breve_historia_da_humanidade.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ABreve_historia_da_humanidade.flac",
+   "artist": "Wilfredor",
+   "license": "CC0",
+   "sha1": "940cfe74c9db8315a47d2e713f7d0e35df6e0fac"
+  },
+  {
+   "file": "C418_-_Bushes_and_Marshmallows_-_12_Höre.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AC418_-_Bushes_and_Marshmallows_-_12_H%C3%B6re.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "8f4f1749afde25bc59ad5b3498b03e450a78a83a"
+  },
+  {
+   "file": "C418_-_Mixes_-_05_Kitten.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AC418_-_Mixes_-_05_Kitten.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "ce371f33e54f8348ae6e538ff78d15dfb9515c34"
+  },
+  {
+   "file": "C418_-_zweitonegoismus_-_01_zweiton.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AC418_-_zweitonegoismus_-_01_zweiton.flac",
+   "artist": "C418",
+   "license": "CC BY 3.0",
+   "sha1": "80832733e6e58982146a485728e19e59bc71f234"
+  },
+  {
+   "file": "CC0-CH_-_Albert_Mueller_-_Marche_du_boulanger_-_Louis_Cesar_Desormes_-_Anker-01210-3068.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Albert_Mueller_-_Marche_du_boulanger_-_Louis_Cesar_Desormes_-_Anker-01210-3068.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "28d5af8e8b01a9cb5b10a1caa89fa8e86d20eeca"
+  },
+  {
+   "file": "CC0-CH_-_Anker-Orchester_-_Defilier-Marsch_-_Carl_Faust_-_Anker-5387-10819.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Anker-Orchester_-_Defilier-Marsch_-_Carl_Faust_-_Anker-5387-10819.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "a8e803be908b5dccd2316cb1a01af23ab4429b5b"
+  },
+  {
+   "file": "CC0-CH_-_Beka-Orchester_-_Ouverture_Mignon_part_1_-_Ambroise_Thomas_-_Beka-b3024-40766.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Beka-Orchester_-_Ouverture_Mignon_part_1_-_Ambroise_Thomas_-_Beka-b3024-40766.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "5641ba6f66e3f7f544401b056e0233c8a671ab1d"
+  },
+  {
+   "file": "CC0-CH_-_Elias_Breeskin_and_Rudolph_Gruen_-_Cavatina_-_Joachim_Raff_-_Brunswick-13012a-3654.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Elias_Breeskin_and_Rudolph_Gruen_-_Cavatina_-_Joachim_Raff_-_Brunswick-13012a-3654.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "5f8c911b499cfcb273b4eeb0bd45ff052cc95ecd"
+  },
+  {
+   "file": "CC0-CH_-_Various_artists_-_Madama_Butterfly_-_E_questo_E_questo_-_Giacomo_Puccini_-_Columbia-d14538-bx543.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Various_artists_-_Madama_Butterfly_-_E_questo_E_questo_-_Giacomo_Puccini_-_Columbia-d14538-bx543.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "aee8aa71229082f0916e15917cf16e3eb27a0482"
+  },
+  {
+   "file": "CC0-CH_-_Various_artists_-_Madama_Butterfly_-_Jamadori_ancor_le_pene_-_Giacomo_Puccini_-_Columbia-d14537-bx542.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Various_artists_-_Madama_Butterfly_-_Jamadori_ancor_le_pene_-_Giacomo_Puccini_-_Columbia-d14537-bx542.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "2550fdc5a53a621120b2c1a00e48f08e83f24874"
+  },
+  {
+   "file": "CC0-CH_-_Various_artists_-_Madama_Butterfly_-_Oh_eh_Oh_eh_-_Giacomo_Puccini_-_Columbia-d14541-bx555.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACC0-CH_-_Various_artists_-_Madama_Butterfly_-_Oh_eh_Oh_eh_-_Giacomo_Puccini_-_Columbia-d14541-bx555.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "274f55a5e6e8a37a07f95659b2d80c46b0d59632"
+  },
+  {
+   "file": "Camille_Saint-Saëns_-_Le_Rouet_d_Omphale.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACamille_Saint-Sa%C3%ABns_-_Le_Rouet_d%27Omphale.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "b0e25575eefe18b9e98450e7290958f50d945ff5"
+  },
+  {
+   "file": "Can_of_Bliss_-_CHAMPION_-_09_NEARDEATHEXPERIENCE.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACan_of_Bliss_-_CHAMPION_-_09_NEARDEATHEXPERIENCE.flac",
+   "artist": "Can of Bliss",
+   "license": "CC BY 4.0",
+   "sha1": "fa119bb6c11e7fc4cd890e968450bc3829dd9108"
+  },
+  {
+   "file": "Cardiacs_event_-_Q_A_with_Kavus_Torabi.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ACardiacs_event_-_Q%26A_with_Kavus_Torabi.flac",
+   "artist": "CardiacsThing",
+   "license": "CC BY 3.0",
+   "sha1": "93461c7c1bbda61596083a4ce01fcb7107e16be4"
+  },
+  {
+   "file": "Chopin_-_12_Études_Op._25_-_No._10_in_B_minor_Octave_Edward_Neeman_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_12_%C3%89tudes%2C_Op._25_-_No._10_in_B_minor_%27Octave%27_%28Edward_Neeman%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "3241e62009465c5aba29af056d81d954ed75627a"
+  },
+  {
+   "file": "Chopin_-_Allegro_de_concert_in_A_major_Op._46_Olga_Gurevich_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Allegro_de_concert_in_A_major%2C_Op._46_%28Olga_Gurevich%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "5d5ef27950b6a5996ebe68d76d1ea3c97d16f6d8"
+  },
+  {
+   "file": "Chopin_-_Cello_Sonata_in_G_minor_Op._65_-_IV._Finale._Allegro_Christopher_Harding_Yeonjin_Kim_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Cello_Sonata_in_G_minor%2C_Op._65_-_IV._Finale._Allegro_%28Christopher_Harding%2C_Yeonjin_Kim%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "f9de444336d2ee6061882e728ef3200c36ddbc45"
+  },
+  {
+   "file": "Chopin_-_Feuille_d_album_in_E_major_B._151_Aya_Higuchi_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Feuille_d%27album_in_E_major%2C_B._151_%28Aya_Higuchi%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "6fb30073ebb103f0265f04695d6d2e53160d0f1d"
+  },
+  {
+   "file": "Chopin_-_Impromptu_No._4_in_C-sharp_minor_Op._66_Fantaisie-Impromptu_Frank_Levy_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Impromptu_No._4_in_C-sharp_minor%2C_Op._66_%27Fantaisie-Impromptu%27_%28Frank_Levy%29.flac",
+   "artist": "Frédéric Chopin / Frank Lévy",
+   "license": "Public domain",
+   "sha1": "64f6dd762daae6a157b596369d9f3232e90159e5"
+  },
+  {
+   "file": "Chopin_-_Mazurka_No._13_in_A_minor_Op._17_No._4_Edward_Neeman_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Mazurka_No._13_in_A_minor%2C_Op._17_No._4_%28Edward_Neeman%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "db75d89f61d34334aebe221caa8ecbd5afae0d22"
+  },
+  {
+   "file": "Chopin_-_Mazurka_No._17_in_B-flat_minor_Op._24_No._4_Luke_Faulkner_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Mazurka_No._17_in_B-flat_minor%2C_Op._24_No._4_%28Luke_Faulkner%29.flac",
+   "artist": "Frédéric Chopin / Luke Faulkner",
+   "license": "Public domain",
+   "sha1": "964db3a0585b0aea5d15a78d8ebbe507938be651"
+  },
+  {
+   "file": "Chopin_-_Mazurka_No._31_in_A-flat_major_Op._50_No._2_Xuan_He_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Mazurka_No._31_in_A-flat_major%2C_Op._50_No._2_%28Xuan_He%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "6a37fb9075acd2a1dd7501b7476758a1ccb207bd"
+  },
+  {
+   "file": "Chopin_-_Mazurka_No._36_in_A_minor_Op._59_No._1_Xuan_He_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Mazurka_No._36_in_A_minor%2C_Op._59_No._1_%28Xuan_He%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "3b59c6e6d6fc7b870d207d96a3f390bc8ccd7116"
+  },
+  {
+   "file": "Chopin_-_Mazurka_No._5_in_B-flat_major_Op._7_No._1_Luis_Sarro_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Mazurka_No._5_in_B-flat_major%2C_Op._7_No._1_%28Luis_Sarro%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "282d06f7a6d1bfcff4bd637550d88ce75222d20f"
+  },
+  {
+   "file": "Chopin_-_Nocturne_No._8_in_D-flat_major_Op._27_No._2_Frank_Levy_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Nocturne_No._8_in_D-flat_major%2C_Op._27_No._2_%28Frank_Levy%29.flac",
+   "artist": "Frédéric Chopin / Frank Lévy",
+   "license": "Public domain",
+   "sha1": "06eaa4ccc829d3b8577f073d1eb2e27714d315c5"
+  },
+  {
+   "file": "Chopin_-_Polonaise_No._14_in_G-sharp_minor_B._6_Luke_Faulkner_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Polonaise_No._14_in_G-sharp_minor%2C_B._6_%28Luke_Faulkner%29.flac",
+   "artist": "Frédéric Chopin / Luke Faulkner",
+   "license": "Public domain",
+   "sha1": "389d632378fc55c817a89d46b62e299060dda4db"
+  },
+  {
+   "file": "Chopin_-_Waltz_No._17_in_E-flat_major_B._46_Olga_Gurevich_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Waltz_No._17_in_E-flat_major%2C_B._46_%28Olga_Gurevich%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "17f0e4199b78ecbff24d6ff6093ddb126aa54d3f"
+  },
+  {
+   "file": "Chopin_-_Waltz_No._2_in_A-flat_major_Op._34_No._1_Olga_Gurevich_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AChopin_-_Waltz_No._2_in_A-flat_major%2C_Op._34_No._1_%28Olga_Gurevich%29.flac",
+   "artist": "Frédéric Chopin",
+   "license": "Public domain",
+   "sha1": "6702e31b83edc3195fe1ec6e6740b7c06105f9b5"
+  },
+  {
+   "file": "Claude_Debussy_Quatuor_a_cordes_op.10_-_III._Andantino_doucement_expressif_Quatuor_Loewenguth_1953_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AClaude_Debussy%2C_Quatuor_a_cordes%2C_op.10_-_III._Andantino%2C_doucement_expressif_%28Quatuor_Loewenguth%2C_1953%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "61a65730ba38f9e2322bfa3df5a5e9aa6ea43e9f"
+  },
+  {
+   "file": "Columbia-7340-49558.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AColumbia-7340-49558.flac",
+   "artist": "Giuseppe Verdi (1813-1901), Francesco Maria Piave (1810-1876)",
+   "license": "Public domain",
+   "sha1": "f59451024a522cd522cff15a8c8d6497a9b30be8"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonate_en_la_majeur_Kk.114_Marcelle_Meyer_1954_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonate_en_la_majeur_Kk.114_%28Marcelle_Meyer%2C_1954%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "f85eabc68dfa3697269046372a32302ffec73fd0"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonate_en_ré_majeur_Kk.29_Marcelle_Meyer_1954_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonate_en_r%C3%A9_majeur_Kk.29_%28Marcelle_Meyer%2C_1954%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "a81fb367a5f66efa413a54fe39013e76003ca8d4"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonate_en_ré_majeur_Kk._400_Wanda_Landowska_1940_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonate_en_r%C3%A9_majeur_Kk._400_%28Wanda_Landowska%2C_1940%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "15c47988eed1cc0b229681764624f0bd413ab11a"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonate_en_sol_mineur_Kk.8_Marcelle_Meyer_1948_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonate_en_sol_mineur_Kk.8_%28Marcelle_Meyer%2C_1948%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "79e00ce0c2de402a3bcd4aa4c02c8f6b59d46152"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonate_en_ut_majeur_Kk.132_Maria_Tipo_1956_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonate_en_ut_majeur_Kk.132_%28Maria_Tipo%2C_1956%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "8b927c86f6e242b9d1302828f3e5961d41787197"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonates_Kk._426_427_Ralph_Kirkpatrick_1954_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonates_Kk._426_%26_427_%28Ralph_Kirkpatrick%2C_1954%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "84e53957479fb8ee5980700ad4f4cc445a4a8b7f"
+  },
+  {
+   "file": "Domenico_Scarlatti_-_Sonates_en_ut_majeur_Kk._132_133_Ralph_Kirkpatrick_1954_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADomenico_Scarlatti_-_Sonates_en_ut_majeur_Kk._132_%26_133_%28Ralph_Kirkpatrick%2C_1954%29.flac",
+   "artist": "Domenico Scarlatti",
+   "license": "Public domain",
+   "sha1": "24422dd5e4021d7995d8be36bc96554360a62f4f"
+  },
+  {
+   "file": "Dvořák_-_String_Quartet_No._10_in_E_flat_major_Op._51_B92_-_III._Romanza._Andante_con_moto_Musopen_String_Quartet_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ADvo%C5%99%C3%A1k_-_String_Quartet_No._10_in_E_flat_major%2C_Op._51_%28B92%29_-_III._Romanza._Andante_con_moto_%28Musopen_String_Quartet%29.flac",
+   "artist": "Antonín Dvořák",
+   "license": "Public domain",
+   "sha1": "6045004505add0a43d6a1965e18ea72efb261250"
+  },
+  {
+   "file": "Emmanuel_Chabrier_-_España.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AEmmanuel_Chabrier_-_Espa%C3%B1a.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "fdf9899823e1498b39f125e6bfcbbb69703f6cd9"
+  },
+  {
+   "file": "Emmanuel_Chabrier_-_España_Paray_1960_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AEmmanuel_Chabrier_-_Espa%C3%B1a_%28Paray%2C_1960%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "e593280bbaa27904f52d3128239cd306fe7eff6e"
+  },
+  {
+   "file": "Emmanuel_Chabrier_-_Joyeuse_marche.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AEmmanuel_Chabrier_-_Joyeuse_marche.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "37614c0b26222587e59f7b2f45b29058d2662232"
+  },
+  {
+   "file": "Emmanuel_Chabrier_-_Suite_pastorale_1._Idylle_Paray_1960_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AEmmanuel_Chabrier_-_Suite_pastorale_1._Idylle_%28Paray%2C_1960%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "390ee20ad9c571045864beb0f96d7c090983e86e"
+  },
+  {
+   "file": "Entretien_sur_l_histoire_de_la_cathedrale_armenienne_apostolique_du_Prado_a_Marseille_-_2153.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AEntretien_sur_l%27histoire_de_la_cathedrale_armenienne_apostolique_du_Prado_a_Marseille_-_2153.flac",
+   "artist": "Paroles Vives (auteur personne morale);Avedikian, Zadik (informateur);AD 13 (commanditaire);Langewiesche, Katrin (enquet",
+   "license": "CC BY 4.0",
+   "sha1": "70c40d912497fe52ef7e28a4956153492fbe4c5e"
+  },
+  {
+   "file": "Explications_et_commentaires_d_une_rescapee_du_genocide_armenien_et_de_ses_filles_sur_l_identite_armenienne_et_sa_transm_-_2159.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AExplications_et_commentaires_d%27une_rescapee_du_genocide_armenien_et_de_ses_filles_sur_l%27identite_armenienne_et_sa_transm_-_2159.flac",
+   "artist": "Paroles Vives (auteur personne morale);Mardoyan, Elmonde (informateur);Peyrieres, Danielle (informateur);Brunat, Veroniq",
+   "license": "CC BY 4.0",
+   "sha1": "a2fc70bba535a95edfa1183f2d29b5c300aeffde"
+  },
+  {
+   "file": "Famous_Poems_That_Tell_Great_Stories.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AFamous_Poems_That_Tell_Great_Stories.flac",
+   "artist": "Fredric March; Alexander Scourby; Arnold Moss; Agnes Moorehead",
+   "license": "CC BY 4.0",
+   "sha1": "aef3877b5075a9d0873bd80122ecd44d06ac75d2"
+  },
+  {
+   "file": "Fed._Cir._oral_argument._2008-5050_1st_Home_Liquidating_Trust_v_US.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AFed._Cir._oral_argument._2008-5050_1st_Home_Liquidating_Trust_v_US.flac",
+   "artist": "United States Court of Appeals for the Federal Circuit",
+   "license": "Public domain",
+   "sha1": "a445147ad2e3795fe40b0266010fea4765e9ca33"
+  },
+  {
+   "file": "Fed._Cir._oral_argument._2019-1504_20-20_Vision_Center_LLC_v._Vision_Precision_Holdings.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AFed._Cir._oral_argument._2019-1504_20-20_Vision_Center%2C_LLC_v._Vision_Precision_Holdings.flac",
+   "artist": "United States Court of Appeals for the Federal Circuit",
+   "license": "Public domain",
+   "sha1": "31cebc11036d5f2ed872139be9d27d792890b47e"
+  },
+  {
+   "file": "Félix_Blume_-_Death_in_Haiti_-_Bonus_Disc_-_02_People_crying_at_the_cemetery.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AF%C3%A9lix_Blume_-_Death_in_Haiti_-_Bonus_Disc_-_02_People_crying_at_the_cemetery.flac",
+   "artist": "Félix Blume",
+   "license": "CC BY 3.0",
+   "sha1": "a0640a8ba30603c0282be9a77283d9063f51c05c"
+  },
+  {
+   "file": "Georgian_national_anthem.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGeorgian_national_anthem.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "bc9c2efc8ed4cbf2183cf08df37eb0c767db24cd"
+  },
+  {
+   "file": "Goldberg_Variations_BWV_988_05_Variatio_4_a_1_Clav.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGoldberg_Variations_BWV_988_05_Variatio_4_a_1_Clav.flac",
+   "artist": "Composer: Johann Sebastian Bach; Performer: Kimiko Ishizaka",
+   "license": "CC0",
+   "sha1": "9ca753dc968dcfb10b009d1b44c00dc06a6b68f1"
+  },
+  {
+   "file": "Goldberg_Variations_BWV_988_06_Variatio_5_a_1_ovvero_2_Clav.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGoldberg_Variations_BWV_988_06_Variatio_5_a_1_ovvero_2_Clav.flac",
+   "artist": "Composer: Johann Sebastian Bach; Performer: Kimiko Ishizaka",
+   "license": "CC0",
+   "sha1": "4b702c538d8250c981c086828c8997d81a810956"
+  },
+  {
+   "file": "Goldberg_Variations_BWV_988_22_Variatio_21_Canone_alla_Settima.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGoldberg_Variations_BWV_988_22_Variatio_21_Canone_alla_Settima.flac",
+   "artist": "Composer: Johann Sebastian Bach; Performer: Kimiko Ishizaka",
+   "license": "CC0",
+   "sha1": "5e060aec9313dd42a4e029f860f2b5b1de3076c2"
+  },
+  {
+   "file": "Goldberg_Variations_BWV_988_23_Variatio_22_a_1_Clav.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGoldberg_Variations_BWV_988_23_Variatio_22_a_1_Clav.flac",
+   "artist": "Composer: Johann Sebastian Bach; Performer: Kimiko Ishizaka",
+   "license": "CC0",
+   "sha1": "2e09002e0990802004d379c092c111a0aac66f61"
+  },
+  {
+   "file": "Goldberg_Variations_BWV_988_27_Variatio_26_a_2_Clav.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGoldberg_Variations_BWV_988_27_Variatio_26_a_2_Clav.flac",
+   "artist": "Composer: Johann Sebastian Bach; Performer: Kimiko Ishizaka",
+   "license": "CC0",
+   "sha1": "6356e86efaf7fce20864d14c9d63788290c9f25e"
+  },
+  {
+   "file": "Goldberg_Variations_BWV_988_28_and_29_Variatio_27_a_2_Clav._Canone_alla_Nona_-_Variatio_28_a_2_Clav.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGoldberg_Variations_BWV_988_28_and_29_Variatio_27_a_2_Clav._Canone_alla_Nona_-_Variatio_28_a_2_Clav.flac",
+   "artist": "Composer: Johann Sebastian Bach; Performer: Kimiko Ishizaka",
+   "license": "CC0",
+   "sha1": "0bce90781f722ad0da1f1ec7e062ff88e2e801f9"
+  },
+  {
+   "file": "Grieg_-_Peer_Gynt_Suite_No._1_Op._46_-_I._Morning_Mood_Musopen_Symphony_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AGrieg_-_Peer_Gynt_Suite_No._1%2C_Op._46_-_I._Morning_Mood_%28Musopen_Symphony%29.flac",
+   "artist": "Edvard Grieg",
+   "license": "Public domain",
+   "sha1": "712a0424015467203da4b108d56b554e511e2193"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_11.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHOME_-_Resting_State_-_11.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "4e67dace2a8bfc803b4bc01709df1f906733b653"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_12.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHOME_-_Resting_State_-_12.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "ba63e33219974520a5dfd23fdb573e1ed983e38b"
+  },
+  {
+   "file": "HOME_-_Resting_State_-_7.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHOME_-_Resting_State_-_7.flac",
+   "artist": "HOME",
+   "license": "CC BY 3.0",
+   "sha1": "8f9cbebd6090137fd2f8230e78ba5ebedbff9cbf"
+  },
+  {
+   "file": "Hector_Berlioz_-_Les_Nuits_d_été_op.7_-_I_Villanelle_Victoria_de_Los_Angeles_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHector_Berlioz_-_Les_Nuits_d%27%C3%A9t%C3%A9%2C_op.7_-_I_Villanelle_%28Victoria_de_Los_Angeles%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "7505b799d1cf31a1b15be457a10da2c70821902b"
+  },
+  {
+   "file": "Hector_Berlioz_-_Les_Nuits_d_été_op.7_-_VI_L_île_inconnue_Eleanor_Steber_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHector_Berlioz_-_Les_Nuits_d%27%C3%A9t%C3%A9%2C_op.7_-_VI_L%27%C3%AEle_inconnue_%28Eleanor_Steber%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "f9b61178f1dc02b0b3d37f279b3026cdbb31cb08"
+  },
+  {
+   "file": "Hector_Berlioz_-_Les_Nuits_d_été_op.7_-_VI_L_île_inconnue_Victoria_de_Los_Angeles_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHector_Berlioz_-_Les_Nuits_d%27%C3%A9t%C3%A9%2C_op.7_-_VI_L%27%C3%AEle_inconnue_%28Victoria_de_Los_Angeles%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "0d83a619eb53052528282d696ebfd17708994557"
+  },
+  {
+   "file": "Hector_Berlioz_-_Les_Nuits_d_été_op.7_-_V_Au_cimetiere_Victoria_de_Los_Angeles_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AHector_Berlioz_-_Les_Nuits_d%27%C3%A9t%C3%A9%2C_op.7_-_V_Au_cimetiere_%28Victoria_de_Los_Angeles%29.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "843baf64d7ba878533baff5a9698823578609b78"
+  },
+  {
+   "file": "I_LL_BUILD_A_STAIRWAY_TO_PARADISE_-_MARKELS_ORCHESTRA_1922_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AI%27LL_BUILD_A_STAIRWAY_TO_PARADISE_-_MARKELS_ORCHESTRA_%281922%29.flac",
+   "artist": "George Gershwin",
+   "license": "Public domain",
+   "sha1": "c4a90c8ac5c85b4c999839040102752a4d03c517"
+  },
+  {
+   "file": "I_Want_a_Girl_Just_Like_the_Girl_that_Married_Dear_Old_Dad_-_American_Quartet_-_Victor_16962.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AI_Want_a_Girl_Just_Like_the_Girl_that_Married_Dear_Old_Dad_-_American_Quartet_-_Victor_16962.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "5a369b6b3bce1fffcad1ac40166dc1bdf73dccb4"
+  },
+  {
+   "file": "Jean-Philippe_Rameau_-_Les_Niais_de_Sologne_Marcelle_Meyer_1953_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AJean-Philippe_Rameau_-_Les_Niais_de_Sologne_%28Marcelle_Meyer%2C_1953%29.flac",
+   "artist": "Jean-Philippe Rameau",
+   "license": "Public domain",
+   "sha1": "4572037030fc44d88075b75009d53893c8cb22c1"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_Bach-_Well-Tempered_Clavier_Book_1_-_22_Fugue_No._11_in_F_major_BWV_856.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_Bach-_Well-Tempered_Clavier%2C_Book_1_-_22_Fugue_No._11_in_F_major%2C_BWV_856.flac",
+   "artist": "Johann Sebastian Bach",
+   "license": "Public domain",
+   "sha1": "9918c2c988023a58b9d7a24de1c1279e5c86574e"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_Bach-_Well-Tempered_Clavier_Book_1_-_35_Prelude_No._18_in_G-sharp_minor_BWV_863.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_Bach-_Well-Tempered_Clavier%2C_Book_1_-_35_Prelude_No._18_in_G-sharp_minor%2C_BWV_863.flac",
+   "artist": "Johann Sebastian Bach",
+   "license": "Public domain",
+   "sha1": "1cf60c6fa98e9d4ba963d74b1f32214881788b39"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_J.S._Bach_The_Art_of_Fugue_BWV_1080_-_08_Contrapunctus_8_a_3.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_J.S._Bach%2C_The_Art_of_Fugue%2C_BWV_1080_-_08_Contrapunctus_8_a_3.flac",
+   "artist": "Johann Sebastian Bach (composer), Kimiko Ishizaka (performer)",
+   "license": "CC0",
+   "sha1": "663c1dbf5e04ba552a8f7e115090f197b9e29fd5"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_J.S._Bach_The_Art_of_Fugue_BWV_1080_-_10_Contrapunctus_10_a_4_Alla_Decima.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_J.S._Bach%2C_The_Art_of_Fugue%2C_BWV_1080_-_10_Contrapunctus_10_a_4_Alla_Decima.flac",
+   "artist": "Johann Sebastian Bach (composer), Kimiko Ishizaka (performer)",
+   "license": "CC0",
+   "sha1": "a154a71fecab4d362bd9da9bf378a1c49b549215"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_J.S._Bach_The_Art_of_Fugue_BWV_1080_-_11_Contrapunctus_11_a_4.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_J.S._Bach%2C_The_Art_of_Fugue%2C_BWV_1080_-_11_Contrapunctus_11_a_4.flac",
+   "artist": "Johann Sebastian Bach (composer), Kimiko Ishizaka (performer)",
+   "license": "CC0",
+   "sha1": "a70c130f973cd251b2941d938c094b9a55d30ee4"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_J.S._Bach_The_Art_of_Fugue_BWV_1080_-_18_Canon_Alla_Decima_in_Contrapunto_All_Terza.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_J.S._Bach%2C_The_Art_of_Fugue%2C_BWV_1080_-_18_Canon_Alla_Decima_in_Contrapunto_All_Terza.flac",
+   "artist": "Johann Sebastian Bach (composer), Kimiko Ishizaka (performer)",
+   "license": "CC0",
+   "sha1": "2f401f04109d35e80970598bd33e35983e7eaa91"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_J.S._Bach_The_Art_of_Fugue_BWV_1080_-_19_Canon_Alla_Duodecima_in_Contrapunto_Alla_Quinta.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_J.S._Bach%2C_The_Art_of_Fugue%2C_BWV_1080_-_19_Canon_Alla_Duodecima_in_Contrapunto_Alla_Quinta.flac",
+   "artist": "Johann Sebastian Bach (composer), Kimiko Ishizaka (performer)",
+   "license": "CC0",
+   "sha1": "03506b47661fb9130d4624e95e8fe7b88a8c714d"
+  },
+  {
+   "file": "Kimiko_Ishizaka_-_J.S._Bach_The_Art_of_Fugue_BWV_1080_-_20_Fuga_a3_Soggetti_completion_by_Pianist_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AKimiko_Ishizaka_-_J.S._Bach%2C_The_Art_of_Fugue%2C_BWV_1080_-_20_Fuga_a3_Soggetti_%28completion_by_Pianist%29.flac",
+   "artist": "Johann Sebastian Bach (composer), Kimiko Ishizaka (performer and composer of completion)",
+   "license": "CC0",
+   "sha1": "cca01b0d99c96d431be37f1138dfc1ccb64f547b"
+  },
+  {
+   "file": "L_installation_de_la_diaspora_armenienne_marseillaise_et_la_construction_des_eglises_expliquees_par_l_un_des_fondateurs_-_2164.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AL%27installation_de_la_diaspora_armenienne_marseillaise_et_la_construction_des_eglises_expliquees_par_l%27un_des_fondateurs_-_2164.flac",
+   "artist": "Paroles Vives (auteur personne morale);Artin, Jean-Garbis (informateur);AD 13 (commanditaire);Langewiesche, Katrin (enqu",
+   "license": "CC BY 4.0",
+   "sha1": "bdec1fbf819fb08160239c3c736f6f2ffc2094ec"
+  },
+  {
+   "file": "Louis_Chauvin_and_Scott_Joplin_s_Heliotrope_Bouquet_1907_performed_by_John_Robson_on_piano_c._2007.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ALouis_Chauvin_and_Scott_Joplin%27s_%22Heliotrope_Bouquet%22_%281907%29%2C_performed_by_John_Robson_on_piano_c._2007.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "2a79fe03b98cced2dc73700f7d4da461961ce269"
+  },
+  {
+   "file": "Ludwig_van_Beethoven_-_Concerto_for_Piano_and_Orchestra_no._4_in_G_major_-_3._Rondo_Wilhelm_Kempff_Ferdinand_Leitner_Berliner_Philharmoniker_1962_.fla.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ALudwig_van_Beethoven_-_Concerto_for_Piano_and_Orchestra_no._4_in_G_major_-_3._Rondo_%28Wilhelm_Kempff%2C_Ferdinand_Leitner%2C_Berliner_Philharmoniker%2C_1962%29.flac",
+   "artist": "Wilhelm Kempff, Ferdinand Leitner, Berliner Philharmoniker",
+   "license": "Public domain",
+   "sha1": "55ad590a2e3783e96f284c9a45dcef2e5759c84e"
+  },
+  {
+   "file": "Mendelssohn_-_String_Quartet_No._6_in_F_minor_Op._80_-_IV._Finale_-_Allegro_molto_Musopen_String_Quartet_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AMendelssohn_-_String_Quartet_No._6_in_F_minor%2C_Op._80_-_IV._Finale_-_Allegro_molto_%28Musopen_String_Quartet%29.flac",
+   "artist": "Felix Mendelssohn",
+   "license": "Public domain",
+   "sha1": "811c82b46622a558e231f463fd7c6e2a51962979"
+  },
+  {
+   "file": "Mozart_-_Requiem_Krips_-_VI._Recordare.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AMozart_-_Requiem_%28Krips%29_-_VI._Recordare.flac",
+   "artist": "Wolfgang Amadeus Mozart",
+   "license": "Public domain",
+   "sha1": "9180741f84b6fb51a539f1896c06d85294838ad1"
+  },
+  {
+   "file": "Mozart_-_Symphony_No._40_in_G_minor_K550_-_IV._Finale._Allegro_assai_Musopen_Symphony_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AMozart_-_Symphony_No._40_in_G_minor%2C_K550_-_IV._Finale._Allegro_assai_%28Musopen_Symphony%29.flac",
+   "artist": "Wolfgang Amadeus Mozart",
+   "license": "Public domain",
+   "sha1": "6957236e56eb854bfaec3111c132f14fef5ad5be"
+  },
+  {
+   "file": "National_anthem_of_Lesotho_performed_by_the_U.S._Navy_Band.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ANational_anthem_of_Lesotho%2C_performed_by_the_U.S._Navy_Band.flac",
+   "artist": "USN Band, Ferdinand-Samuel Laur",
+   "license": "Public domain",
+   "sha1": "e0f5d27644954f452472f1bf0de1f43c304eab6a"
+  },
+  {
+   "file": "PDP-CH_-_Adolf_Busch_Chamber_Players_-_Adolf_Busch_-_Suite_No._3_in_D_major_BWV_1068_-_Gavotte_-_Bach_-_Hmv-db3019-2ea3898.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Adolf_Busch_Chamber_Players_-_Adolf_Busch_-_Suite_No._3_in_D_major%2C_BWV_1068_-_Gavotte_-_Bach_-_Hmv-db3019-2ea3898.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "a0da15c674b87b5240498e721e25748133a59f0e"
+  },
+  {
+   "file": "PDP-CH_-_Amelita_Galli-Curci_soprano_-_Les_pêcheurs_de_perles_-_Comme_autrefois_-_Bizet_-_Cormon_-_Carre_-_Gramophone-db255-2-033086.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Amelita_Galli-Curci%2C_soprano_-_Les_p%C3%AAcheurs_de_perles_-_Comme_autrefois_-_Bizet_-_Cormon_-_Carre_-_Gramophone-db255-2-033086.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "0999cc975dfebe5b1d08009810b2a38d811d8bb6"
+  },
+  {
+   "file": "PDP-CH_-_BBC_Symphony_Orchestra_-_Arturo_Toscanini_-_Symphony_No._6_in_F_major_Op._68_-_Beethoven_-_Part_6_-_2nd_Movement_-_Hmv-db3335-14709b-mo.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_BBC_Symphony_Orchestra_-_Arturo_Toscanini_-_Symphony_No._6_in_F_major%2C_Op._68_-_Beethoven_-_Part_6_-_2nd_Movement_-_Hmv-db3335-14709b-mo.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "dbf193e3f6d3532379b6ac250d92579eace13999"
+  },
+  {
+   "file": "PDP-CH_-_Beniamino_Gigli_Tenor_-_Rosario_Bourdon_-_Martha_-_Act_3-_M_apparì_tutt_amor_-_Friedrich_von_Flotow_-_Hmv-db1382-7109b.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Beniamino_Gigli%2C_Tenor_-_Rosario_Bourdon_-_Martha_-_Act_3-_M%27appar%C3%AC_tutt%27amor_-_Friedrich_von_Flotow_-_Hmv-db1382-7109b.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "1dbfe3bbc7e758404593ccb3eea86999d8296117"
+  },
+  {
+   "file": "PDP-CH_-_Berlin_Philharmonic_Erich_Kleiber_-_Capriccio_Italien_Op._45_Part_2_-_Tchaikovsky_-_Telefunken-e1406-019118.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Berlin_Philharmonic%2C_Erich_Kleiber_-_Capriccio_Italien%2C_Op._45%2C_Part_2_-_Tchaikovsky_-_Telefunken-e1406-019118.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "d23cabee97de61100aae8966dbb4caad5d113380"
+  },
+  {
+   "file": "PDP-CH_-_Berlin_Philharmonic_Orchestra_-_Leo_Blech_-_Peer_Gynt_Op._23_-_Peer_Gynt_Suite_-_Part_1-_Morning_-_Edvard_Grieg_-_Vocalion-a38009-485as.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Berlin_Philharmonic_Orchestra_-_Leo_Blech_-_Peer_Gynt%2C_Op._23_-_Peer_Gynt_Suite_-_Part_1-_Morning_-_Edvard_Grieg_-_Vocalion-a38009-485as.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "784567350ca1d1e41f2f257777c47239749dfd9b"
+  },
+  {
+   "file": "PDP-CH_-_Berlin_Philharmonic_Orchestra_-_Leo_Blech_-_Peer_Gynt_Op._23_-_Peer_Gynt_Suite_-_Part_2-_Death_of_Ase_-_Edvard_Grieg_-_Vocalion-a38009-486as..flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Berlin_Philharmonic_Orchestra_-_Leo_Blech_-_Peer_Gynt%2C_Op._23_-_Peer_Gynt_Suite_-_Part_2-_Death_of_Ase_-_Edvard_Grieg_-_Vocalion-a38009-486as.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "910217607d307ebb34297fb47db13c0ab7cebfc5"
+  },
+  {
+   "file": "PDP-CH_-_Busch_Quartet_-_String_Quartet_No._9_in_C_major_No._3_-_Beethoven_-_Part_3_-_2nd_Movement_-_Hmv-db2110-32-4193.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Busch_Quartet_-_String_Quartet_No._9_in_C_major%2C_No._3_-_Beethoven_-_Part_3_-_2nd_Movement_-_Hmv-db2110-32-4193.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "388e1eb87ad9455b5906a2f9038605140b3c399b"
+  },
+  {
+   "file": "PDP-CH_-_Chicago_Symphony_Orchestra_Frederick_Stock_-_Orchestral_Suite_No._2_in_B_minor_BWV_1067_Rondeau_Sarabande_Bourree_-_Bach_-_Hmv-d1674-6-0654.f.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Chicago_Symphony_Orchestra%2C_Frederick_Stock_-_Orchestral_Suite_No._2_in_B_minor%2C_BWV_1067%2C_Rondeau%2C_Sarabande%2C_Bourree_-_Bach_-_Hmv-d1674-6-0654.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "782a2d0dc94455f901e6579118114ab1ce1ab46c"
+  },
+  {
+   "file": "PDP-CH_-_Dajos_Bela_with_Chamber_orchestra_-_Staendchen_Op._21_-_Aubade_-_Serenade_-_Johnny_Heykens_-_Odeon-o2407b-be6421.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Dajos_Bela_with_Chamber_orchestra_-_Staendchen%2C_Op._21_-_Aubade_-_Serenade_-_Johnny_Heykens_-_Odeon-o2407b-be6421.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "6d528e7f307185b68445af5ba94cd2596c5f8ed5"
+  },
+  {
+   "file": "PDP-CH_-_Dajos_Bela_with_Odeon-Kuenstler-Orchestra_-_Was_Blumen_traeumen_Op._156_-_Siegfried_Translateur_-_Odeon-o2103a-be6057.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Dajos_Bela_with_Odeon-Kuenstler-Orchestra_-_Was_Blumen_traeumen%2C_Op._156_-_Siegfried_Translateur_-_Odeon-o2103a-be6057.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "1e52db7e0935a2738def9ef63b1e54316bd6f42e"
+  },
+  {
+   "file": "PDP-CH_-_Emil_Schipper_bass-baritone_with_the_Vienna_Philharmonic_Karl_Alwin_-_Siegfried_WWV_86C_-_Act_3_Scene_1_Wache_Wala_-_Wagner_-_Hmv-es440-2-042.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Emil_Schipper%2C_bass-baritone_with_the_Vienna_Philharmonic%2C_Karl_Alwin_-_Siegfried%2C_WWV_86C_-_Act_3%2C_Scene_1%2C_Wache%2C_Wala_-_Wagner_-_Hmv-es440-2-042050.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "7275aec8fe32b625f62e4babbc978b0bab9ff1c6"
+  },
+  {
+   "file": "PDP-CH_-_Gwen_Catley_Soprano_with_the_Hallé_Orchestra_-_Rigoletto_-_Caro_nome_-_Verdi_-_Warwick_Braithwaite_-_Hmv-c3369-2er687.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Gwen_Catley%2C_Soprano_with_the_Hall%C3%A9_Orchestra_-_Rigoletto_-_Caro_nome_-_Verdi_-_Warwick_Braithwaite_-_Hmv-c3369-2er687.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "30889ff60f36895b8106ae7e6b1272750e233320"
+  },
+  {
+   "file": "PDP-CH_-_Herbert_Janssen_Baritone_-_Coenraad_van_Bos_Pianoforte_-_An_die_Geliebte_-_Hugo_Wolf_-_Hmv-db2705-2ra103.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Herbert_Janssen%2C_Baritone_-_Coenraad_van_Bos%2C_Pianoforte_-_An_die_Geliebte_-_Hugo_Wolf_-_Hmv-db2705-2ra103.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "a2f4b9cf8ecf3c4cea6fe3ef878993202f0515f8"
+  },
+  {
+   "file": "PDP-CH_-_Herbert_Janssen_Baritone_-_Michael_Raucheisen_Pianoforte_-_Vergangenheit_-_Wolf_-_Mörike_-_Hmv-db2706-2ra858.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Herbert_Janssen%2C_Baritone_-_Michael_Raucheisen%2C_Pianoforte_-_Vergangenheit_-_Wolf_-_M%C3%B6rike_-_Hmv-db2706-2ra858.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "2d04427a62f8b5110aea40aac188e46af3e29280"
+  },
+  {
+   "file": "PDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Atto_2-Sc_08-10-Aria-_Finora_in_questa_camera_-_Rossini_-_Columbia-d14572-bx620.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Atto_2-Sc_08-10-Aria-_Finora_in_questa_camera_-_Rossini_-_Columbia-d14572-bx620.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "0852028c2ca778b48b4a3231e214dacda3580ab5"
+  },
+  {
+   "file": "PDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Atto_3-Sc_04-Quintetto-_Don_Basilio_-_Cosa_veggo_-_Rossini_-_Columbia-d14576-bx622.fl.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Atto_3-Sc_04-Quintetto-_Don_Basilio_-_Cosa_veggo_-_Rossini_-_Columbia-d14576-bx622.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "900ee9fec591a2a2c1a24c5a69fa9e359644bed1"
+  },
+  {
+   "file": "PDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Atto_3-Sc_09-Terzetto-_Ah_qual_colpo_inaspettato_-_Rossini_-_Columbia-d14578-bx612.fl.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Atto_3-Sc_09-Terzetto-_Ah%2C_qual_colpo_inaspettato_-_Rossini_-_Columbia-d14578-bx612.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "eb9f2945543cdcfb1cb4eb4c59d205a6a9a6392e"
+  },
+  {
+   "file": "PDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Overture_-_Rossini_-_Columbia-d14564-bx205.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_La_Scala_-_Lorenzo_Molajoli_-_Il_barbiere_di_Siviglia_-_Overture_-_Rossini_-_Columbia-d14564-bx205.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "0383d7157a80488b384dc40dcb42eb9fdae66d49"
+  },
+  {
+   "file": "PDP-CH_-_London_Philharmonic_Choir_Charles_Kennedy_Scott_-_Requiem_in_D_minor_K_626_Kyrie_Eleison_and_Dies_Irae_-_Mozart_-_Hmv-d1147-04898.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_London_Philharmonic_Choir%2C_Charles_Kennedy_Scott_-_Requiem_in_D_minor%2C_K_626%2C_Kyrie_Eleison_and_Dies_Irae_-_Mozart_-_Hmv-d1147-04898.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "7ff81fd82af2977197165daf9307a84eed046183"
+  },
+  {
+   "file": "PDP-CH_-_London_Philharmonic_Orchestra_-_Serge_Koussevitzky_-_Symphony_No._3_in_E-flat_major_Op._55_-_2nd_Movement_-_Beethoven_-_Hmv-db2348-2ea844.fla.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_London_Philharmonic_Orchestra_-_Serge_Koussevitzky_-_Symphony_No._3_in_E-flat_major%2C_Op._55_-_2nd_Movement_-_Beethoven_-_Hmv-db2348-2ea844.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "3ecd72f8a58bac8605441d77074a53306a87eb30"
+  },
+  {
+   "file": "PDP-CH_-_London_Philharmonic_Orchestra_-_Serge_Koussevitzky_-_Symphony_No._3_in_E-flat_major_Op._55_-_4th_Movement_-_Beethoven_-_Hmv-db2350-2ea849.fla.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_London_Philharmonic_Orchestra_-_Serge_Koussevitzky_-_Symphony_No._3_in_E-flat_major%2C_Op._55_-_4th_Movement_-_Beethoven_-_Hmv-db2350-2ea849.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "9e71a5065a2d0bed2ec63e1c22bdd072c474c222"
+  },
+  {
+   "file": "PDP-CH_-_London_Symphony_Orchestra_-_Bruno_Walter_-_Symphony_No._9_in_C_major_D_944_-_4th_Movement_Conclusion_Finale_Allegro_vivace_-_Schubert_-_Hmv-d.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_London_Symphony_Orchestra_-_Bruno_Walter_-_Symphony_No._9_in_C_major%2C_D_944_-_4th_Movement%2C_Conclusion%2C_Finale%2C_Allegro_vivace_-_Schubert_-_Hmv-db3612-2ea6765.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "5956896b2e68f15fd4131130264ae8cea32957dc"
+  },
+  {
+   "file": "PDP-CH_-_National_Symphony_Orchestra_of_London_-_Malcolm_Sargent_conductor_-_Symphony_No._5_in_C_minor_Op._67_-_2nd_Movement_-_Andante_con_moto_-_Beet.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_National_Symphony_Orchestra_of_London_-_Malcolm_Sargent%2C_conductor_-_Symphony_No._5_in_C_minor%2C_Op._67_-_2nd_Movement_-_Andante_con_moto_-_Beethoven_-_Decca-k1127-ar8992.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "17b5876a2f7202443aec16bd800ec8e3ba09a1a7"
+  },
+  {
+   "file": "PDP-CH_-_National_Symphony_Orchestra_of_London_-_Malcolm_Sargent_conductor_-_Symphony_No._5_in_C_minor_Op._67_-_3rd_Movement_-_Allegro_-_Beethoven_-_D.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_National_Symphony_Orchestra_of_London_-_Malcolm_Sargent%2C_conductor_-_Symphony_No._5_in_C_minor%2C_Op._67_-_3rd_Movement_-_Allegro_-_Beethoven_-_Decca-k1128-ar8994.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "be755c08cc952330c343b6f3195fb549aa39dc5d"
+  },
+  {
+   "file": "PDP-CH_-_New_York_Philharmonic_-_Arturo_Toscanini_-_The_Barber_of_Seville_-_Gioachino_Rossini_-_Overture_-_Part_2_-_Electrola-ej576-42-757.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_New_York_Philharmonic_-_Arturo_Toscanini_-_The_Barber_of_Seville_-_Gioachino_Rossini_-_Overture_-_Part_2_-_Electrola-ej576-42-757.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "04e9754363bd365fe074b1ff3ed27f648303be39"
+  },
+  {
+   "file": "PDP-CH_-_Osei_Nyantakyi_and_his_Band_-_Nowaa_-_Ashima_high_life_-_Opika-2007-part-27154-21.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Osei_Nyantakyi_and_his_Band_-_Nowaa_-_Ashima_high_life_-_Opika-2007-part-27154-21.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "f23b78c8c311dffc1c5bd0c568f9dce3e45ac7f2"
+  },
+  {
+   "file": "PDP-CH_-_Pianoforte_solo-_Claudio_Arrau_-_Sonata_No.18_in_E-flat_major_Opus_31_No.3_-_No.4-_2nd_Movement_-_Scherzo_-_Ludwig_van_Beethoven_-_Columbia-l.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Pianoforte_solo-_Claudio_Arrau_-_Sonata_No.18_in_E-flat_major_Opus_31_No.3_-_No.4-_2nd_Movement_-_Scherzo_-_Ludwig_van_Beethoven_-_Columbia-lx1040-cax9803.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "75a98e6f2680a8f87aa2aa447dea82e90c16acec"
+  },
+  {
+   "file": "PDP-CH_-_Royal_Liverpool_Philharmonic_-_Malcolm_Sargent_-_Messiah_-_No.05-_Recit-_Thus_Saith_the_Lord_Air-_But_who_may_abide_-_George_Frideric_Handel_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Royal_Liverpool_Philharmonic_-_Malcolm_Sargent_-_Messiah_-_No.05-_Recit-_Thus_Saith_the_Lord%3B_Air-_But_who_may_abide_-_George_Frideric_Handel_-_Columbia-dx1285-cax9593.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "3e06c93c03fc2f65c3178a512d663c563d0d84a0"
+  },
+  {
+   "file": "PDP-CH_-_Royal_Liverpool_Philharmonic_-_Malcolm_Sargent_-_Messiah_-_No.07-_Chorus-_And_He_Shall_Purify_-_George_Frideric_Handel_-_Columbia-dx1286-cax9.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Royal_Liverpool_Philharmonic_-_Malcolm_Sargent_-_Messiah_-_No.07-_Chorus-_And_He_Shall_Purify_-_George_Frideric_Handel_-_Columbia-dx1286-cax9591.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "266644623369ec5f345d50cc1c63d4122c3bcd07"
+  },
+  {
+   "file": "PDP-CH_-_San_Francisco_Symphony_Orchestra_-_Alfred_Hertz_-_A_Midsummer_Night_s_Dream_Op._21_-_Part_3_Overture_-_Felix_Mendelssohn_-_Hmv-d1627-5-0640.f.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_San_Francisco_Symphony_Orchestra_-_Alfred_Hertz_-_A_Midsummer_Night%27s_Dream%2C_Op._21_-_Part_3%2C_Overture_-_Felix_Mendelssohn_-_Hmv-d1627-5-0640.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "f9864647c2cef7d39e642995a37ee9aedaa221df"
+  },
+  {
+   "file": "PDP-CH_-_Wilhelm_Backhaus_-_Liebestraum_No._3_in_A-flat_major_S.541-3_Liszt_-_Hmv-d788-05754.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_Wilhelm_Backhaus_-_Liebestraum_No._3_in_A-flat_major%2C_S.541-3_%28Liszt%29_-_Hmv-d788-05754.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "db5e35067b2688c9e258fd79b473cce6b01a3f0f"
+  },
+  {
+   "file": "PDP-CH_-_none_or_unknown_-_Les_Dragons_de_Villars_-_Air_des_Mules_avec_clochettes_-_Aimé_Maillart_-_Gramophone-033099-01800v.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-CH_-_none_or_unknown_-_Les_Dragons_de_Villars_-_Air_des_Mules_avec_clochettes_-_Aim%C3%A9_Maillart_-_Gramophone-033099-01800v.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "f8de9c77f4110d5609c772bd67ece11d210c5781"
+  },
+  {
+   "file": "PDP-UY_-_Arturo_de_Nava_baritone_solo_with_guitar_-_Tango_de_los_negros_-_Victor-62206a-f87.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APDP-UY_-_Arturo_de_Nava%2C_baritone_solo_with_guitar_-_Tango_de_los_negros_-_Victor-62206a-f87.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "e55acfec730daab58de13a10df7c8b57773a1998"
+  },
+  {
+   "file": "Petscop_Soundtrack_-_16_explore.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3APetscop_Soundtrack_-_16_explore.flac",
+   "artist": "Tony Domenico as “Rainer”",
+   "license": "CC BY 4.0",
+   "sha1": "840bf74f39b12daceb5e939eb271ab0387ee82e3"
+  },
+  {
+   "file": "Resonant_Bodies_-_Resonant_Bodies_I_-_01_Resonant_Chasm.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AResonant_Bodies_-_Resonant_Bodies_I_-_01_Resonant_Chasm.flac",
+   "artist": "Resonant Bodies",
+   "license": "CC BY 3.0",
+   "sha1": "22407c8a5846dee6b670b1cbe53be8f9d201377e"
+  },
+  {
+   "file": "SMOKE_ON_THE_WATER_1944.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASMOKE_ON_THE_WATER_1944.flac",
+   "artist": "RED FOLEY; Earl Nunn; Zeke Clements",
+   "license": "Public domain",
+   "sha1": "b1dca35a72c251b0bf6c7f5f7f03a6a84fd269a6"
+  },
+  {
+   "file": "Satie_Gymnopedie_No_1_performed_by_Michael_Laucke.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASatie_Gymnopedie_No_1_performed_by_Michael_Laucke.flac",
+   "artist": "Mlaucke",
+   "license": "Public domain",
+   "sha1": "090f87e4f5eea9491188eecf003b62ea2a93a36e"
+  },
+  {
+   "file": "Schubert_-_Piano_Sonata_No._17_in_D_major_D850_-_IV._Rondo_Allegro_moderato_Paul_Pitman_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASchubert_-_Piano_Sonata_No._17_in_D_major%2C_D850_-_IV._Rondo_%28Allegro_moderato%29_%28Paul_Pitman%29.flac",
+   "artist": "Franz Schubert",
+   "license": "Public domain",
+   "sha1": "cbf1e23c3cba9b0dc149aca806e235087100d010"
+  },
+  {
+   "file": "Schubert_-_Piano_Sonata_No._8_in_E_flat_major_D568_-_II._Andante_molto_Paul_Pitman_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASchubert_-_Piano_Sonata_No._8_in_E_flat_major%2C_D568_-_II._Andante_molto_%28Paul_Pitman%29.flac",
+   "artist": "Franz Schubert",
+   "license": "Public domain",
+   "sha1": "54a5c0935c9ccd78f4c022ff8cd1faa0a380fd20"
+  },
+  {
+   "file": "Sewerslvt_-_IRLY_-_I_Really_Like_You_pt1.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASewerslvt_-_IRLY_-_I_Really_Like_You_pt1.flac",
+   "artist": "Sewerslvt",
+   "license": "CC BY 3.0",
+   "sha1": "5e0a416ee4117d3cd30704e3faed1dd9cc3b17a5"
+  },
+  {
+   "file": "Sewerslvt_-_we_had_good_times_together_don_t_forget_that_-_04_the_last_thing_she_sent_me.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASewerslvt_-_we_had_good_times_together%2C_don%27t_forget_that_-_04_the_last_thing_she_sent_me.flac",
+   "artist": "Sewerslvt",
+   "license": "CC BY 4.0",
+   "sha1": "bbd46539c3155b03b596272a1651da90d4a3712d"
+  },
+  {
+   "file": "Sullivan_-_The_Pirates_of_Penzance_Gilbert_and_Sullivan_Dunedin_1977_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASullivan_-_The_Pirates_of_Penzance_%28Gilbert_and_Sullivan_Dunedin%2C_1977%29.flac",
+   "artist": "W. S. Gilbert (libretto) / Arthur Sullivan (music) / Gilbert and Sullivan Operatic Society Dunedin (performance)",
+   "license": "Public domain",
+   "sha1": "0d5312e546d4271444165f929afcea090d03db62"
+  },
+  {
+   "file": "Swingin_Down_The_Lane_-_Isham_Jones_Orchestra.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ASwingin%27_Down_The_Lane_-_Isham_Jones_Orchestra.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "e90bb3331a8f2e12563813170b6150322f204420"
+  },
+  {
+   "file": "Temoignage_d_un_Francais_d_origine_armenienne_sur_sa_relation_a_l_armenite_-_2110.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATemoignage_d%27un_Francais_d%27origine_armenienne_sur_sa_relation_a_l%27armenite_-_2110.flac",
+   "artist": "Paroles Vives (auteur personne morale);Artinian, Agop (informateur);AD 13 (commanditaire);Gaucher, Anne-Sylvie (enqueteu",
+   "license": "CC BY 4.0",
+   "sha1": "ff6d9ed0642f525f8144d34ef47691fb6726ff39"
+  },
+  {
+   "file": "Temoignage_d_un_couple_d_Armeniens_arrive_a_Martigues_dans_les_annees_1990_-_2114.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATemoignage_d%27un_couple_d%27Armeniens_arrive_a_Martigues_dans_les_annees_1990_-_2114.flac",
+   "artist": "Paroles Vives (auteur personne morale);Arabyan, Hamlet (informateur);AD 13 (commanditaire);Gaucher, Anne-Sylvie (enquete",
+   "license": "CC BY 4.0",
+   "sha1": "0bfc3c0dc44d3d72d2cbaff7022d7dc5468f5d12"
+  },
+  {
+   "file": "Temoignage_d_un_couple_d_Armeniens_exiles_en_France_pour_des_raisons_politiques_-_2116.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATemoignage_d%27un_couple_d%27Armeniens_exiles_en_France_pour_des_raisons_politiques_-_2116.flac",
+   "artist": "Paroles Vives (auteur personne morale);1058 (informateur);1059 (informateur);AD 13 (commanditaire);Gaucher, Anne-Sylvie ",
+   "license": "CC BY 4.0",
+   "sha1": "29a44b04111e83316e57dd865c1e7d75e670c154"
+  },
+  {
+   "file": "Temoignage_d_un_descendant_d_Armeniens_engage_dans_l_Association_culturelle_des_Armeniens_de_Bouc-Bel-Air_-_2117.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATemoignage_d%27un_descendant_d%27Armeniens_engage_dans_l%27Association_culturelle_des_Armeniens_de_Bouc-Bel-Air_-_2117.flac",
+   "artist": "Paroles Vives (auteur personne morale);Sarkissian, Raymond (informateur);AD 13 (commanditaire);Martel, Florie (enqueteur",
+   "license": "CC BY 4.0",
+   "sha1": "ccce76a03cb42b8ec29938947989e71d68fb44b7"
+  },
+  {
+   "file": "Temoignage_d_une_femme_francaise_mariee_a_un_Armenien_sur_l_appropriation_et_la_transmission_de_la_culture_de_son_mari_-_2109.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATemoignage_d%27une_femme_francaise_mariee_a_un_Armenien%2C_sur_l%27appropriation_et_la_transmission_de_la_culture_de_son_mari_-_2109.flac",
+   "artist": "Paroles Vives (auteur personne morale);Artinian, Danielle (informateur);AD 13 (commanditaire);Gaucher, Anne-Sylvie (enqu",
+   "license": "CC BY 4.0",
+   "sha1": "466e1df825df3d4ab6b465266f21e7f7772a4a9b"
+  },
+  {
+   "file": "Temoignage_sur_la_famille_qui_tenait_la_fabrique_de_boulghour_de_Palette_-_2124.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATemoignage_sur_la_famille_qui_tenait_la_fabrique_de_boulghour_de_Palette_-_2124.flac",
+   "artist": "Paroles Vives (auteur personne morale);Hasbanian, Sima (informateur);AD 13 (commanditaire);Martel, Florie (enqueteur)",
+   "license": "CC BY 4.0",
+   "sha1": "557eee55074caedaf55d65581b3224a20cb0b4ad"
+  },
+  {
+   "file": "Tempete_Quebec_ville_12_Aug_2023.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3ATempete_Quebec_ville_12_Aug_2023.flac",
+   "artist": "Wilfredor",
+   "license": "CC0",
+   "sha1": "b2294d04c34cee6608e3a16cbf2727ccee59e66d"
+  },
+  {
+   "file": "Thanksgiving_-_Miss_Elsie_Southgate_and_her_sister_Dorothy_1916_sound_recording_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AThanksgiving_-_Miss_Elsie_Southgate_and_her_sister_Dorothy_%281916_sound_recording%29.flac",
+   "artist": "Elsie Southgate and Dorothy Southgate",
+   "license": "Public domain",
+   "sha1": "bac8f875c8a1ad32c556aff4aac4de7c74ffff1e"
+  },
+  {
+   "file": "That_Old_Gang_of_Mine_-_Billy_Murray_Ed_Smalle.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AThat_Old_Gang_of_Mine_-_Billy_Murray%2C_Ed_Smalle.flac",
+   "artist": "",
+   "license": "Public domain",
+   "sha1": "880fc2075832043efbf678fc0e1591ce4e27e528"
+  },
+  {
+   "file": "The_Highwayman_read_by_Maria_Falin.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AThe_Highwayman_read_by_Maria_Falin.flac",
+   "artist": "Maria Falin",
+   "license": "CC0",
+   "sha1": "20d2a34ad483e39bfbde355520a55f8f9f836dcd"
+  },
+  {
+   "file": "Une_femme_francaise_temoigne_de_l_engagement_de_sa_belle-famille_au_sein_de_la_communaute_armenienne_-_2091.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AUne_femme_francaise_temoigne_de_l%27engagement_de_sa_belle-famille_au_sein_de_la_communaute_armenienne_-_2091.flac",
+   "artist": "Paroles Vives (auteur personne morale);1050 (informateur);AD 13 (commanditaire);Martel, Florie (enqueteur)",
+   "license": "CC BY 4.0",
+   "sha1": "2f6be5f207bbcf9d279852b13fad2f9ddc51d22d"
+  },
+  {
+   "file": "Victor-62213b-f94.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3AVictor-62213b-f94.flac",
+   "artist": "Juan de Nava (1856-1919)",
+   "license": "Public domain",
+   "sha1": "c32904e7e5715dc16ee881cc64f5b43747f5c8a1"
+  },
+  {
+   "file": "_Washington_District_of_Columbia_anthem_.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A%22Washington%22_%28District_of_Columbia_anthem%29.flac",
+   "artist": "Jimmie Dodd",
+   "license": "CC0",
+   "sha1": "f090153349e2516526a501134f9d65966a1e4c37"
+  },
+  {
+   "file": "Варвара_Панина._Мы_были_молоды_с_тобой.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A%D0%92%D0%B0%D1%80%D0%B2%D0%B0%D1%80%D0%B0_%D0%9F%D0%B0%D0%BD%D0%B8%D0%BD%D0%B0._%D0%9C%D1%8B_%D0%B1%D1%8B%D0%BB%D0%B8_%D0%BC%D0%BE%D0%BB%D0%BE%D0%B4%D1%8B_%D1%81_%D1%82%D0%BE%D0%B1%D0%BE%D0%B9.flac",
+   "artist": "Варвара Панина",
+   "license": "Public domain",
+   "sha1": "4837bf1e23815e9164b00a60ceab71a74d0722fb"
+  },
+  {
+   "file": "Гимн-Республики-Тимистан.flac",
+   "source_page": "https://commons.wikimedia.org/wiki/File%3A%D0%93%D0%B8%D0%BC%D0%BD-%D0%A0%D0%B5%D1%81%D0%BF%D1%83%D0%B1%D0%BB%D0%B8%D0%BA%D0%B8-%D0%A2%D0%B8%D0%BC%D0%B8%D1%81%D1%82%D0%B0%D0%BD.flac",
+   "artist": "Timistan official",
+   "license": "CC0",
+   "sha1": "326b036f9d9ff0429e8277aef4e70bd41da70023"
+  }
+ ]
+}

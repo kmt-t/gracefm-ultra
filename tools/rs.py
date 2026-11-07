@@ -9,7 +9,7 @@ import soundfile as sf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from gracefm_ultra.gfm import GRACEFM  # noqa: E402
+from gracefm_ultra.gfm import LOSSLESS  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
 BIN = os.path.join(HERE, "..", "engine", "target", "release")
@@ -52,9 +52,8 @@ def tx(profile, pcm24, scen=(30.0, 0, 0.0, 1.0), seed=1):
 
 
 def clip(p, seconds=2.0, index=3, start=10.0):
-    """学習用音源（GraceFM の eval_audio/train_lossless）の index 番目の start 秒から seconds 秒を、プロファイル p のサンプリング周波数で、符号つき 24 bit 整数 (n, 2) にする"""
-    src = os.path.join(GRACEFM, "eval_audio", "train_lossless")
-    path = os.path.join(src, sorted(f for f in os.listdir(src) if f.endswith((".flac", ".wav")))[index])
+    """学習用音源（data/audio/train_lossless）の index 番目の start 秒から seconds 秒を、プロファイル p のサンプリング周波数で、符号つき 24 bit 整数 (n, 2) にする"""
+    path = os.path.join(LOSSLESS, sorted(f for f in os.listdir(LOSSLESS) if f.endswith((".flac", ".wav")))[index])
     x, fs = sf.read(path, dtype="float64", always_2d=True, start=int(start * 44100), frames=int((seconds + 1.5) * 44100))
     xs = wavio.resample(x[:, :2], fs, p.fs)[int(0.5 * p.fs):int(0.5 * p.fs) + int(seconds * p.fs)] * 0.5
     xi = wavio.to_pcm24(xs)

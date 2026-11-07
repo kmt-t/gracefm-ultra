@@ -8,4 +8,5 @@ data/
 runs/
 *.pt
 *.npz
+*.onnx
 engine/target/

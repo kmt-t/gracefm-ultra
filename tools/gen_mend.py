@@ -22,6 +22,7 @@ sys.path.insert(0, GRACEFM)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS, pin  # noqa: E402
+from gracefm_ultra.gfm import LOSSLESS  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 from tools.common import wavio  # noqa: E402
 
@@ -87,7 +88,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--profile", default="B200-L")
     ap.add_argument("--split", choices=["train", "val"], default="train")
-    ap.add_argument("--src", default=os.path.join(GRACEFM, "eval_audio", "train_lossless"))
+    ap.add_argument("--src", default=LOSSLESS)
     ap.add_argument("--segments", type=int, default=4, help="音源 1 本あたりの区間数の上限")
     ap.add_argument("--seconds", type=float, default=20.0)
     ap.add_argument("--scenarios", type=int, default=8)

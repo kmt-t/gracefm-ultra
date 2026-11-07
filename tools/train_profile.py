@@ -24,6 +24,7 @@ GRACEFM = os.environ.get("GRACEFM_DIR", os.path.join(HERE, "..", "..", "gracefm"
 sys.path.insert(0, GRACEFM)
 sys.path.insert(0, os.path.join(HERE, ".."))
 from gracefm_ultra.cpus import CPUS  # noqa: E402
+from gracefm_ultra.gfm import AUDIO  # noqa: E402
 from gracefm.profiles import PROFILES  # noqa: E402
 
 STAGES = ("data", "mendnet", "postdata", "postnet", "export", "verify")
@@ -75,16 +76,17 @@ def train_profile(name, a):
             raise SystemExit(f"{name}: データに約 {need:.0f} GB 要りますが、{a.data} の空きが足りません")
         g = tool("gen_mend.py") + common + ["--workers", str(len(CPUS))]
         emin = str(ESN0_MIN[p.modulation])
+        lossless = os.path.join(a.audio, "train_lossless")
         awgn = ["--sub", "mend_awgn", "--awgn", ESN0_AWGN[p.modulation]]
         q = ["--segments", "1", "--seconds", "4", "--scenarios", "2"] if a.quick else []
         for split in ("val", "train"):
-            run(log, *g, "--split", split, "--sub", "mend", "--segments", "4", "--esn0-min", emin, *q)
+            run(log, *g, "--split", split, "--sub", "mend", "--src", lossless, "--segments", "4", "--esn0-min", emin, *q)
             if not a.quick:
-                run(log, *g, "--split", split, "--sub", "mend", "--src", a.commons, "--segments", "2")
+                run(log, *g, "--split", split, "--sub", "mend", "--src", os.path.join(a.audio, "commons"), "--segments", "2")
             if split == "val":
-                run(log, *g, "--split", split, *awgn, "--segments", "4", *q[:4])
+                run(log, *g, "--split", split, *awgn, "--src", lossless, "--segments", "4", *q[:4])
                 if not a.quick:
-                    run(log, *g, "--split", split, *awgn, "--src", a.commons, "--segments", "2")
+                    run(log, *g, "--split", split, *awgn, "--src", os.path.join(a.audio, "commons"), "--segments", "2")
 
     if "mendnet" in a.stages:
         res = max(int(RESIDENT * 32000 / p.fs), 1)
@@ -132,7 +134,7 @@ def main():
     ap.add_argument("--data", default=os.path.join(root, "data"))
     ap.add_argument("--runs", default=os.path.join(root, "runs"))
     ap.add_argument("--models", default=os.path.join(root, "engine", "models"))
-    ap.add_argument("--commons", default=os.path.join(root, "data", "audio", "commons"), help="tools/collect_audio.py で集めた音源")
+    ap.add_argument("--audio", default=AUDIO, help="tools/collect_audio.py で取った音源")
     ap.add_argument("--clean", action="store_true", help="終わったらそのプロファイルのデータを消す")
     ap.add_argument("--quick", action="store_true", help="動作確認: 短いデータと 1 分足らずの学習")
     a = ap.parse_args()
@@ -144,8 +146,8 @@ def main():
         ap.error(f"段は {STAGES + EXTRA_STAGES} から選んでください")
     if a.quick:
         a.mend_minutes, a.post_minutes = 0.5, 0.5
-    elif "data" in a.stages and not os.path.isdir(a.commons):
-        ap.error(f"音源がありません: {a.commons}（tools/collect_audio.py で集める）")
+    if "data" in a.stages and not all(os.path.isdir(os.path.join(a.audio, s)) for s in ("train_lossless", "commons")[:1 if a.quick else 2]):
+        ap.error(f"音源がありません: {a.audio}（tools/collect_audio.py で取る）")
     os.makedirs(a.runs, exist_ok=True)
     os.makedirs(a.data, exist_ok=True)
     for n in names:
