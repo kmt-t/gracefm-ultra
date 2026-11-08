@@ -74,3 +74,8 @@ python3 -m venv .venv
 ## ライセンス
 
 [PolyForm Noncommercial License 1.0.0](LICENSE)（GraceFMと同じ）。`NOTICE` の Required Notice を保持すること。GraceFMに依存するため、その条件にも従う。
+
+
+## 強化計画・CI
+
+多角的な検証・実用化に向けた10段階の項目は [docs/HARDENING.md](docs/HARDENING.md) を参照。CI は Rust ワークスペースの整形とテストを実行する。
