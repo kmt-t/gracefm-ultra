@@ -1,4 +1,4 @@
-//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。暗号化は未対応）。名前の末尾が `-L` なら LeGall 5/3、それ以外は Haar で、pid とビット配置は同じ。
+//! プロファイル定義（GraceFM `gracefm/profiles.py` の移植。暗号化は未対応）。名前の末尾が `-L` なら LeGall 5/3、それ以外は Haar。pid は同じで、`-L` は主系の一部の仮数幅だけ狭い（`legall_override`）。
 
 /// 帯域数の上限（低域近似 1 + 詳細帯域 levels。登録プロファイルはすべて 5）
 pub const MAX_BANDS: usize = 5;
@@ -147,8 +147,29 @@ pub fn profile_by_name(name: &str) -> Option<Profile> {
         Some(base) => (base, Transform::LeGall53, 2),
         None => (name, Transform::Haar, 3),
     };
-    let row = base_row(base)?;
-    Some(Profile { name: name.to_string(), transform, format_id, ..row })
+    let mut p = Profile { name: name.to_string(), transform, format_id, ..base_row(base)? };
+    if transform == Transform::LeGall53 {
+        legall_override(base, &mut p);
+    }
+    Some(p)
+}
+
+/// 成分ごとの（仮数幅、基本層の幅）
+type Widths = ([i64; MAX_BANDS], [i64; MAX_BANDS]);
+
+/// `-L` が Haar の行から置き換える仮数幅と基本層の幅（本家 `LEGALL_OVERRIDES`）
+fn legall_override(base: &str, p: &mut Profile) {
+    let (m, s): (Widths, Option<Widths>) = match base {
+        "B200M" | "B200" | "M700M" => (([10, 7, 7, 7, 7], [4, 3, 3, 3, 3]), None),
+        "M700" => (([10, 7, 7, 7, 3], [4, 3, 3, 3, 1]), None),
+        "B200MY" | "M700MY" => (([10, 7, 7, 7, 7], [4, 3, 1, 1, 1]), None),
+        "B200Y" | "M700Y" => (([10, 7, 7, 7, 7], [4, 3, 1, 1, 1]), Some(([10, 7, 7, 7, 7], [4, 3, 1, 1, 1]))),
+        _ => return,
+    };
+    (p.bits_m, p.base_m) = (m.0, Some(m.1));
+    if let Some((bits, base)) = s {
+        (p.bits_s, p.base_s) = (bits, Some(base));
+    }
 }
 
 fn base_row(name: &str) -> Option<Profile> {
