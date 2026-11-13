@@ -24,12 +24,12 @@
 
 設計への影響:
 - 受信の DSP の入力は、8 bit の I/Q で 2.4 MS/s 以下とする。
-- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は 12 bit のままとし、8 bit との差は C/N0 に 1 dB の下駄を履かせて見込む。C/N0 は本家と同じく Es/N0 にシンボルレートの dB を足した値で、B200 は 172.6 kシンボル/秒で +52.4 dB。評価する Es/N0 16〜30 dB は C/N0 68.4〜82.4 dB-Hz に当たる。
-- 下駄の根拠: 実効 7 bit、AGC の余裕 10 dB として、2.4 MS/s 全体の量子化の SNR は約 34 dB。B200 のシンボルレート（172.6 kBd）では Es/N0 約 45 dB に当たり、実用帯の上端（Es/N0 30 dB）でも劣化は 0.1 dB に満たない。1 dB はその上の余裕。
+- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は 12 bit のままとし、8 bit との差は C/N0 に 1 dB の下駄を履かせて見込む。C/N0 は本家と同じく Es/N0 にシンボルレートの dB を足した値で、B200 は 172.5 kシンボル/秒で +52.4 dB。評価する Es/N0 16〜30 dB は C/N0 68.4〜82.4 dB-Hz に当たる。
+- 下駄の根拠: 実効 7 bit、AGC の余裕 10 dB として、2.4 MS/s 全体の量子化の SNR は約 34 dB。B200 のシンボルレート（172.5 kBd）では Es/N0 約 45 dB に当たり、実用帯の上端（Es/N0 30 dB）でも劣化は 0.1 dB に満たない。1 dB はその上の余裕。
 
 ## ディレクトリ
 
-- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、帯域分割の合成（`transform.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
+- `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、CPU 親和性設定（`cpus.py`）、帯域分割の合成（`transform.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
 - `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）。受信が使う ONNX は `tools/export_onnx.py` が `engine/models/<プロファイル>/` に書く
 - `tools/`: 音源の取得（`collect_audio.py`、一覧は `audio_sources.json`）、データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendnet.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_post.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）、プロファイルごとの学習の一括実行（`train_profile.py`）、判定の閾値の確認（`check_gate.py`）
 - `runs/`: 学習・評価のスクリプトとログ（git 管理外）
