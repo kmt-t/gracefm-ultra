@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PostNet の試聴用の音。data/<profile>/post/awgn_val の区間から、指定した Es/N0 ごとに、原音・復号のまま・MendNet・PostNet を
-ステレオ 32 kHz の WAV (float32、正規化しない) で書く。PostNet は超解像をかける判定 (postnet.gate) がオフのところは MendNet のまま。
+ステレオの WAV (プロファイルの標本化周波数、float32、正規化しない) で書く。PostNet は超解像をかける判定 (postnet.gate) がオフのところは MendNet のまま。
 
   .venv/bin/python tools/demo_post.py --ckpt runs/post_B200-L.pt --match Chopin_-_Waltz,Scarlatti,C418_-_Mixes --esn0 18,20,30
 """

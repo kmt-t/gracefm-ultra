@@ -21,7 +21,7 @@ from .transform import COUNTS, STRIDES, basis, coef_power
 M = 256                               # MDCT のビン数 = ホップ
 A_MAX = 2.0                           # 足し込む量の上限 (事後標準偏差の倍数)
 GATE_WIN = 500                        # 切り替えの判定の平滑化 [フレーム] (過去 1 秒)
-GATE_ON = 27.5                        # 予測の SNR がこれ以上になったらオン [dB] 
+GATE_ON = 27.5                        # 予測の SNR がこれ以上になったらオン [dB]
 GATE_OFF = 25.5                       # オンのあと、これを下回ったらオフ [dB] (ヒステリシス。閾値の前後での細かい入れ替わりを防ぐ)
 FRAME = 64                            # フレーム長 [サンプル]
 X_SCALE = 1e-4                        # 係数の特徴: asinh(X / X_SCALE) / 8

@@ -3,7 +3,7 @@
 PostNet (MDCT 領域の超解像) の評価。各シナリオを丸ごと (約 20 秒) 処理し、MendNet の出力 (PostNet の入力) と比べる。
 PostNet の出力は、超解像をかける判定 (postnet.gate) がオフの MDCT フレームでは MendNet の出力のまま。
 - 既定: data/<profile>/post/val の全シナリオの、判定がオンのフレームで、帯域ごとの SNR、エネルギーの比、対数スペクトル距離 (MDCT 領域、M と S の合計)。
-- --awgn: data/<profile>/post/awgn_val で、音声 (ステレオ 32 kHz) の SNR (全体)、PSNR (区間の平均)、ViSQOL (区間の平均) を Es/N0 ごとに。
+- --awgn: data/<profile>/post/awgn_val で、音声 (ステレオ、プロファイルの標本化周波数) の SNR (全体)、PSNR (区間の平均)、ViSQOL (区間の平均) を Es/N0 ごとに。
   復号のまま (data/<profile>/mend_awgn/val の dec) も並べる。
 
   .venv/bin/python tools/eval_post.py --ckpt runs/post_B200-L.pt

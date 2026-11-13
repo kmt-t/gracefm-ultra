@@ -2,12 +2,12 @@
 
 [GraceFM](https://github.com/kmt-t/gracefm) のビットストリームを、PCグレードの受信機（RTL-SDRなど）で高性能に復号する受信側の実装。送信側とフレーム形式は変えない。
 
-受信は、フレームの復号のあとに 2 つの網を置く（1 系統）。本家と同じく Haar（S 変換）と LeGall 5/3（名前の末尾が `-L`）の両方の帯域分割を扱い、網はプロファイルごとに学習する。受信は本家の全 22 プロファイル（Y 方式、モノラル、SUB、48 kHz を含む）を扱い、学習は `tools/train_profile.py` で通す。学習済みのモデルは B200 と B200-L だけ `engine/models/` に入れている。ほかのプロファイルは、音源を取って学習する（「学習から受信まで」）。学習データはリポジトリに入れない。
+受信は 1 系統で、フレームの復号のあとに 2 つの網を置く。帯域分割は本家と同じく Haar（S 変換）と LeGall 5/3（名前の末尾が `-L`）の両方に対応し、Y 方式・モノラル・SUB・48 kHz を含む本家の全 22 プロファイルを扱う。網はプロファイルごとに `tools/train_profile.py` で学習する（学習データはリポジトリに含めず、学習済みのモデルは B200 と B200-L だけを `engine/models/` に同梱している）。
 
 - **MendNet**（`docs/MENDNET.md`）: 前後 100 フレームの文脈、受信 LLR、壊れたフレームに残る手がかりから、欠落・壊れたフレームを補間し、使えるフレームのビット誤りを補正する。係数（事後平均）と、その怪しさ（事後標準偏差）を出す。
-- **PostNet**（`docs/POSTNET.md`）: MDCT 領域の超解像。量子化の雑音の床に沈んだ弱い高域（ピアノの倍音など）を復元する。MendNet の事後標準偏差から出す予測の SNR で、元の音質が良いとき（B200 で Es/N0 18 dB、C/N0 70 dB-Hz あたりから）だけかける。
+- **PostNet**（`docs/POSTNET.md`）: MDCT 領域の超解像。量子化の雑音の床に沈んだ弱い高域（ピアノの倍音など）を復元する。MendNet の事後標準偏差から出す予測の SNR で、元の音質が良いとき（B200 で Es/N0 18 dB、C/N0 約 70.4 dB-Hz あたりから）だけかける。
 
-受信機は Rust + ONNX Runtime（`engine/`、`docs/DESIGN.md`）。フレームを 1 つずつ受け、制約は遅延 200 ms まで、メモリ 2 GB まで。シミュレーションのシンボルからの処理で、遅延は約 170 ms（補間の確定待ちと合成 152 ms + 計算）、メモリは約 170 MB（`docs/DESIGN.md`）。
+受信機は Rust + ONNX Runtime（`engine/`、`docs/DESIGN.md`）。フレームを 1 つずつ受け、制約は遅延 200 ms まで、メモリ 2 GB まで。シミュレーションのシンボルからの処理で、32 kHz 系の遅延は約 170 ms（補間の確定待ちと合成 152 ms + 計算）、メモリは約 170 MB（`docs/DESIGN.md`）。
 
 ## ターゲットデバイス
 
@@ -24,14 +24,18 @@
 
 設計への影響:
 - 受信の DSP の入力は、8 bit の I/Q で 2.4 MS/s 以下とする。
-- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は 12 bit のままとし、8 bit との差は C/N0 に 1 dB の下駄を履かせて見込む。C/N0 は本家と同じく Es/N0 にシンボルレートの dB を足した値で、B200 は 172.5 kシンボル/秒で +52.4 dB。評価する Es/N0 16〜30 dB は C/N0 68.4〜82.4 dB-Hz に当たる。
-- 下駄の根拠: 実効 7 bit、AGC の余裕 10 dB として、2.4 MS/s 全体の量子化の SNR は約 34 dB。B200 のシンボルレート（172.5 kBd）では Es/N0 約 45 dB に当たり、実用帯の上端（Es/N0 30 dB）でも劣化は 0.1 dB に満たない。1 dB はその上の余裕。
+- 学習データの通信路のモデル（`engine/gfm-core/src/channel.rs`）の ADC は 12 bit のままとし、実機の 8 bit との差は、目標の C/N0 に 1 dB の余裕を見込んで吸収する。C/N0 は本家と同じく Es/N0 にシンボルレートの dB を足した値で、B200 は 172.5 kシンボル/秒で +52.4 dB。評価する Es/N0 16〜30 dB は C/N0 68.4〜82.4 dB-Hz に当たる。
+- 余裕の根拠: 実効 7 bit、AGC の余裕 10 dB として、2.4 MS/s 全体の量子化の SNR は約 34 dB。B200 のシンボルレート（172.5 kBd）では Es/N0 約 45 dB に当たり、実用帯の上端（Es/N0 30 dB）でも劣化は 0.1 dB に満たない。1 dB はその上の余裕。
 
 ## ディレクトリ
 
 - `gracefm_ultra/`: 本家 GraceFM を import する設定（`gfm.py`）、CPU 親和性設定（`cpus.py`）、帯域分割の合成（`transform.py`）、MendNet（`mendnet.py`）、PostNet（`postnet.py`）
 - `engine/`: Rust 実装（送信、受信、通信路、学習データ生成。`engine/README.md`）。受信が使う ONNX は `tools/export_onnx.py` が `engine/models/<プロファイル>/` に書く
-- `tools/`: 音源の取得（`collect_audio.py`、一覧は `audio_sources.json`）、データ生成（`gen_mend.py`、`gen_post.py`）、学習（`train_mendnet.py`、`train_post.py`）、評価（`eval_mendnet.py`、`eval_post.py`）、ONNX の書き出し（`export_onnx.py`）、試験（`test_rx_onnx.py`、`test_rs_compat.py`）、試聴（`demo_post.py`）、プロファイルごとの学習の一括実行（`train_profile.py`）、判定の閾値の確認（`check_gate.py`）
+- `tools/`: Python の学習・評価・確認用スクリプト群
+  - 音源・データ生成: `collect_audio.py`（一覧は `audio_sources.json`）、`gen_mend.py`、`gen_post.py`
+  - 学習: `train_profile.py`（1 プロファイル一括）、`train_mendnet.py`、`train_post.py`
+  - 評価・確認・試聴: `eval_mendnet.py`、`eval_post.py`、`check_gate.py`、`demo_post.py`
+  - 書き出し・試験: `export_onnx.py`、`test_rx_onnx.py`、`test_rs_compat.py`
 - `runs/`: 学習・評価のスクリプトとログ（git 管理外）
 
 ## 準備

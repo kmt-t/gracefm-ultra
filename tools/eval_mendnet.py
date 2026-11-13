@@ -5,9 +5,9 @@ MendNet の評価。MendNet の係数は、出力の LLR から作る仮数の�
 - 既定: 検証データ (data/<profile>/mend/val) の窓で、使えないフレームの SNR [dB] を使えない連続区間の長さごとに、使えるフレームの SNR、
   怪しさと実際の誤差の順位相関 (フレームごと) を出す。
 - --awgn: AWGN のみの検証データ (gen_mend.py --split val --sub mend_awgn --awgn 16,18,…,30) の各シナリオを丸ごと (約 20 秒) 復元し、
-  音声 (ステレオ 32 kHz) で原音と比べる。窓 WIN フレームを WIN/2 ずつずらし、各窓の中央 WIN/2 フレームを採る (実際の受信と同じ)。
+  音声 (ステレオ、プロファイルの標本化周波数) で原音と比べる。窓 WIN フレームを WIN/2 ずつずらし、各窓の中央 WIN/2 フレームを採る (実際の受信と同じ)。
   指標は SNR (全体)、PSNR (満点 ±1、区間ごとの平均)、ViSQOL (audio モード、48 kHz に変換、区間ごとの平均) を Es/N0 ごとに。
-  C/N0 [dB-Hz] は Es/N0 + 50 (B200、B200-L の換算)。
+  C/N0 [dB-Hz] は Es/N0 にシンボルレートの dB（B200 は +52.4、B200-L は +52.3）を足した値。
 
   .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendnet_B200-L.pt
   .venv/bin/python tools/eval_mendnet.py --ckpt runs/mendnet_B200-L.pt --awgn
@@ -77,9 +77,6 @@ def runs_of(us):
         run[i:j] = j - i
         i = j
     return run
-
-
-
 
 
 def rank_corr(a, b):

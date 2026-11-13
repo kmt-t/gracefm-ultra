@@ -27,16 +27,16 @@ ONNX Runtime は、リポジトリの `.venv` の onnxruntime（pip）に入っ�
 
 ```
 export ORT_DYLIB_PATH=$(ls ../.venv/lib/python3.*/site-packages/onnxruntime/capi/libonnxruntime.so.*)
-gfm-tx --profile B200-L --pcm clip.raw --scen 20,0,0.05,3 --seed 1 --out a.sym      # 送信 + 通信路
-gfm-rx --profile B200-L --frames a.sym --out out.raw   # 受信（--models の既定は models/<プロファイル>）
-gfm-gen --profile B200-L --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 --out data.npz   # 学習データ
+./target/release/gfm-tx --profile B200-L --pcm clip.raw --scen 20,0,0.05,3 --seed 1 --out a.sym      # 送信 + 通信路
+./target/release/gfm-rx --profile B200-L --frames a.sym --out out.raw   # 受信（--models の既定は models/<プロファイル>）
+./target/release/gfm-gen --profile B200-L --pcm clip.raw --scen 12,0,0,1 --scen 20,1,0,1 --seed 1 --out data.npz   # 学習データ
 ```
 
 - `clip.raw`: 符号つき 24 bit を int32（リトルエンディアン）で入れた L/R の交互（満点 = 2^23）
 - `--scen e0,fade,rate,burst`: 基準 Es/N0 [dB]、Rayleigh か (0/1)、フレーム欠落率、平均バースト長 [フレーム]
 - `a.sym`: u32 フレーム数, u32 フレームあたりのシンボル数, フレーム数個の到着フラグ (u8), 届いたフレームの I/Q (f32、±1 = 1.0)
-- `out.raw`: L/R の交互の f32（満点 ±1）、フレーム数 × 64 サンプル。時刻は送信と揃っている（受信機の遅延は、出力の時刻ではなく、処理の待ち）
-- `gfm-rx` は標準エラー出力に、フレームの統計、超解像をかけた割合（`post_on`）と切り替えの回数、実時間比（`rtf`）、推論の処理時間（初期化を含む最初の 1 回 `first`、残りの `median`、`p99`、`worst`）、遅延（`latency` = 補間の確定待ちと合成の 152 ms + `worst`）、最大の常駐メモリを書く
+- `out.raw`: L/R の交互の f32（満点 ±1）、フレーム数 × ブロック長（64）サンプル。時刻は送信と揃っている（受信機の遅延は、出力の時刻ではなく、処理の待ち）
+- `gfm-rx` は標準エラー出力に、フレームの統計、超解像をかけた割合（`post_on`）と切り替えの回数、実時間比（`rtf`）、推論の処理時間（初期化を含む最初の 1 回 `first`、残りの `median`、`p99`、`worst`）、遅延（`latency` = 補間の確定待ちと合成の 32 kHz で 152 ms + `worst`）、最大の常駐メモリを書く
 
 ## 対応範囲
 
